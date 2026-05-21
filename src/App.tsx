@@ -27,7 +27,8 @@ import {
   ArrowRight,
   User,
   ExternalLink,
-  Info
+  Info,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { kylrixTheme } from './theme';
@@ -451,6 +452,96 @@ export default function App() {
                         Configure Tasks Sync
                       </Button>
                     </Box>
+
+                    {/* Integrated Synchronized Google Calendar Timelines */}
+                    {(() => {
+                      try {
+                        const data = localStorage.getItem('cached_calendar_events');
+                        if (data) {
+                          const parsed = JSON.parse(data);
+                          if (parsed && parsed.length > 0) {
+                            return (
+                              <Box sx={{ mb: 3 }}>
+                                <Paper 
+                                  elevation={0}
+                                  sx={{ 
+                                    p: 3, 
+                                    bgcolor: '#161412', 
+                                    border: '1px solid #6366F1', 
+                                    borderRadius: '24px',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                                  }}
+                                >
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                                    <Box sx={{ p: 1, bgcolor: '#0A0908', borderRadius: '10px', color: '#6366F1', display: 'flex' }}>
+                                      <Calendar size={18} />
+                                    </Box>
+                                    <Box sx={{ flex: 1 }}>
+                                      <Typography sx={{ fontSize: '14px', fontWeight: 800, color: '#FFFFFF', fontFamily: '"Space Grotesk"' }}>
+                                        Synchronized Google Calendar Timelines
+                                      </Typography>
+                                      <Typography sx={{ fontSize: '11px', color: '#9B9691', fontFamily: '"JetBrains Mono"' }}>
+                                        SECURE REPLICA CACHE (OFFLINE CONTEXT)
+                                      </Typography>
+                                    </Box>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      onClick={() => setDrawerOpen(true)}
+                                      sx={{ 
+                                        borderColor: '#34322F', 
+                                        color: '#9B9691', 
+                                        fontFamily: '"JetBrains Mono"', 
+                                        fontSize: '10px',
+                                        '&:hover': { borderColor: '#6366F1', color: '#FFFFFF' }
+                                      }}
+                                    >
+                                      Sync Hub
+                                    </Button>
+                                  </Box>
+                                  
+                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {parsed.slice(0, 4).map((evt: any) => (
+                                      <Box 
+                                        key={evt.id} 
+                                        sx={{ 
+                                          p: 2, 
+                                          bgcolor: '#0A0908', 
+                                          borderRadius: '14px', 
+                                          border: '1px solid #1C1A18',
+                                          display: 'flex', 
+                                          justifyContent: 'space-between', 
+                                          alignItems: 'center' 
+                                        }}
+                                      >
+                                        <Box sx={{ pr: 2 }}>
+                                          <Typography sx={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 700 }}>
+                                            {evt.summary}
+                                          </Typography>
+                                          {evt.location && (
+                                            <Typography sx={{ color: '#9B9691', fontSize: '11px', mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                              Location: {evt.location}
+                                            </Typography>
+                                          )}
+                                        </Box>
+                                        <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+                                          <Typography sx={{ color: '#6366F1', fontSize: '11px', fontFamily: '"JetBrains Mono"', fontWeight: 700 }}>
+                                            {evt.start.dateTime ? new Date(evt.start.dateTime).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'}) : `${evt.start.date} (All Day)`}
+                                          </Typography>
+                                        </Box>
+                                      </Box>
+                                    ))}
+                                  </Box>
+                                </Paper>
+                              </Box>
+                            );
+                          }
+                        }
+                      } catch (e) {
+                        return null;
+                      }
+                      return null;
+                    })()}
 
                     {/* Integrated Tasks Bridge Suggestion Banner */}
                     <Paper 

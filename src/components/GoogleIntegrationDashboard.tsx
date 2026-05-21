@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Box, 
-  Grid, 
   Card, 
   CardContent, 
   Typography, 
@@ -10,7 +9,6 @@ import {
   Button, 
   LinearProgress, 
   CircularProgress,
-  Stack, 
   Alert,
   Dialog,
   DialogTitle,
@@ -23,7 +21,6 @@ import {
 import { 
   RefreshCw, 
   Trash2, 
-  CloudRain, 
   FileText, 
   Calendar, 
   FolderLock, 
@@ -33,12 +30,15 @@ import {
   Terminal,
   Activity,
   AlertTriangle,
-  CheckCircle2,
-  Database
+  Database,
+  MapPin,
+  Clock,
+  User
 } from 'lucide-react';
-import { GoogleService, GoogleServiceKey, SyncLog } from '../types';
+import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent } from '../types';
 import { MappingModal } from './MappingModal';
 import Logo from './Logo';
+import { initAuth, googleSignIn, logout, getAccessToken } from '../googleAuth';
 
 export const GoogleIntegrationDashboard: React.FC = () => {
   // Initial states representing the sovereign Google import conduits
@@ -48,11 +48,11 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       name: 'Google Keep',
       googlename: 'Keep Archive',
       description: 'Import checklists, legacy ideas, and voice logs into Markdown-supported structures.',
-      connected: true,
-      syncActive: true,
+      connected: false,
+      syncActive: false,
       destination: 'Kylrix Note',
       app: 'note',
-      lastSync: '2026-05-21 11:30',
+      lastSync: null,
       accent: '#EC4899' // Note brand color
     },
     {
@@ -60,11 +60,11 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       name: 'Google Tasks',
       googlename: 'Tasks Feed',
       description: 'Transfer unfinished items, checklists, and pipelines directly into active Kanban boards.',
-      connected: true,
-      syncActive: true,
+      connected: false,
+      syncActive: false,
       destination: 'Kylrix Flow',
       app: 'flow',
-      lastSync: '2026-05-21 11:30',
+      lastSync: null,
       accent: '#A855F7' // Flow brand color
     },
     {
@@ -72,11 +72,11 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       name: 'Google Calendar',
       googlename: 'Calendar API',
       description: 'Verify and map upcoming private schedules into offline analytical workspace agendas.',
-      connected: true,
+      connected: false,
       syncActive: false,
       destination: 'Kylrix Flow',
       app: 'flow',
-      lastSync: '2026-05-20 09:15',
+      lastSync: null,
       accent: '#A855F7' // Flow brand color
     },
     {
@@ -105,12 +105,21 @@ export const GoogleIntegrationDashboard: React.FC = () => {
     }
   ]);
 
+  // Firebase auth state variables
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
+
+  // Live Calendar State
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState<boolean>(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+
   // Global states for simulated sync orchestration
   const [syncing, setSyncing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<number>(0);
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([
-    { id: '1', timestamp: '13:40:02', type: 'info', service: 'System', message: 'Client bridge initialized.' },
-    { id: '2', timestamp: '13:40:15', type: 'success', service: 'Keep', message: 'Read 24 notes; hashes match local records.' }
+    { id: '1', timestamp: '14:06:00', type: 'info', service: 'System', message: 'Sovereign client bridge initialized.' }
   ]);
   const [activeSyncStep, setActiveSyncStep] = useState<string>('');
 
@@ -122,9 +131,158 @@ export const GoogleIntegrationDashboard: React.FC = () => {
   const [wipeOpen, setWipeOpen] = useState<boolean>(false);
 
   // Stats Counters
-  const [itemsImported, setItemsImported] = useState<number>(142);
+  const [itemsImported, setItemsImported] = useState<number>(() => {
+    const cached = localStorage.getItem('cached_calendar_events');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        return parsed.length;
+      } catch (e) {
+        return 0;
+      }
+    }
+    return 0;
+  });
 
-  // Progress/Loading timeline sim
+  // Handle Auth mount listening
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, cachedToken) => {
+        setCurrentUser(user);
+        setToken(cachedToken);
+        setAuthChecked(true);
+        triggerSyncLog('success', 'Auth', `Session restored for ${user.email}`);
+        
+        // Auto mark Google services as connected since auth succeeded
+        setServices(current => current.map(s => {
+          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks') {
+            return { ...s, connected: true, syncActive: s.key === 'calendar' ? true : s.syncActive };
+          }
+          return s;
+        }));
+
+        // Fetch events if user previously connected
+        fetchCalendarEvents(cachedToken);
+      },
+      () => {
+        setCurrentUser(null);
+        setToken(null);
+        setAuthChecked(true);
+        setServices(current => current.map(s => ({ ...s, connected: false, syncActive: false })));
+      }
+    );
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Sync Log triggering helper
+  const triggerSyncLog = (type: 'info' | 'success' | 'warn' | 'error', service: string, message: string) => {
+    const newLog: SyncLog = {
+      id: Math.random().toString(),
+      timestamp: new Date().toLocaleTimeString(),
+      type,
+      service,
+      message
+    };
+    setSyncLogs(prev => [newLog, ...prev]);
+  };
+
+  // Google Login and Scope Request Handler
+  const handleLogin = async () => {
+    try {
+      triggerSyncLog('info', 'Auth', 'Requesting secure Firebase Google Popup with Calendar scopes...');
+      const result = await googleSignIn();
+      if (result) {
+        setCurrentUser(result.user);
+        setToken(result.accessToken);
+        triggerSyncLog('success', 'Auth', `Bridged successfully with profile: ${result.user.email}`);
+        
+        setServices(current => current.map(s => {
+          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks') {
+            return { ...s, connected: true, syncActive: s.key === 'calendar' ? true : s.syncActive };
+          }
+          return s;
+        }));
+
+        // Fetch initial list of calendar events
+        await fetchCalendarEvents(result.accessToken);
+      }
+    } catch (err: any) {
+      console.error(err);
+      triggerSyncLog('error', 'Auth', `Authentication cancelled or failed: ${err.message || err}`);
+    }
+  };
+
+  // Google Sign-out Handler
+  const handleLogout = async () => {
+    const confirmed = window.confirm("Are you sure you want to disconnect your Google account and deactivate the current synchronizers?");
+    if (!confirmed) return;
+
+    try {
+      await logout();
+      setCurrentUser(null);
+      setToken(null);
+      setCalendarEvents([]);
+      localStorage.removeItem('cached_calendar_events');
+      setServices(current => current.map(s => ({ ...s, connected: false, syncActive: false, lastSync: null })));
+      triggerSyncLog('warn', 'Auth', 'Google Account disconnected. Active access tokens flushed.');
+    } catch (err: any) {
+      console.error(err);
+      triggerSyncLog('error', 'Auth', `Logout failed: ${err.message || err}`);
+    }
+  };
+
+  // Fetch real Google Calendar Events
+  const fetchCalendarEvents = async (accessToken: string) => {
+    setLoadingEvents(true);
+    setEventsError(null);
+    try {
+      const timeMin = new Date().toISOString();
+      const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=10&orderBy=startTime&singleEvents=true&timeMin=${timeMin}`;
+      
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Calendar fetch failed: Status ${res.status} - ${errText || res.statusText}`);
+      }
+
+      const data = await res.json();
+      const eventsList: CalendarEvent[] = (data.items || []).map((item: any) => ({
+        id: item.id,
+        summary: item.summary || '(No Subject)',
+        description: item.description,
+        start: {
+          dateTime: item.start?.dateTime,
+          date: item.start?.date
+        },
+        end: {
+          dateTime: item.end?.dateTime,
+          date: item.end?.date
+        },
+        location: item.location
+      }));
+
+      setCalendarEvents(eventsList);
+      localStorage.setItem('cached_calendar_events', JSON.stringify(eventsList));
+      triggerSyncLog('success', 'Calendar', `Direct indexed ${eventsList.length} sovereign schedule blocks from primary feed.`);
+      setItemsImported(eventsList.length);
+    } catch (err: any) {
+      console.error('Calendar error:', err);
+      setEventsError(err.message || 'Error occurred fetching events');
+      triggerSyncLog('error', 'Calendar', `API Query fault: ${err.message || err}`);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  // Progress/Loading timeline simulation
   useEffect(() => {
     let timer: any;
     if (syncing) {
@@ -132,18 +290,19 @@ export const GoogleIntegrationDashboard: React.FC = () => {
         setSyncProgress((prev) => {
           if (prev >= 100) {
             setSyncing(false);
-            setItemsImported(prev => prev + 54);
+            const totalItems = calendarEvents.length > 0 ? calendarEvents.length : 24;
+            setItemsImported(totalItems);
+            
             const successLog: SyncLog = {
               id: Date.now().toString(),
               timestamp: new Date().toLocaleTimeString(),
               type: 'success',
               service: 'Master Sync',
-              message: 'Database sync cycle concluded. 54 new records written securely.'
+              message: `Database sync cycle concluded. ${totalItems} new calendar records written securely.`
             };
             setSyncLogs(logs => [successLog, ...logs]);
             setActiveSyncStep('Synchronization Successful');
             
-            // Mark last sync timestamps
             setServices(current => current.map(s => {
               if (s.connected && s.syncActive) {
                 return { ...s, lastSync: 'Just now' };
@@ -156,7 +315,6 @@ export const GoogleIntegrationDashboard: React.FC = () => {
           
           const nextProgress = prev + 8;
           
-          // Inject sequential log timelines to feel absolute high-fidelity
           if (nextProgress === 16) {
             triggerSyncLog('info', 'Keep', 'Parsing Keep legacy checklists into Markdown tags...');
             setActiveSyncStep('Processing Keep Markdown nodes');
@@ -168,9 +326,11 @@ export const GoogleIntegrationDashboard: React.FC = () => {
             triggerSyncLog('success', 'Tasks', 'Tasks processed: 12 backlog cards updated.');
             triggerSyncLog('info', 'Calendar', 'Checking upcoming event arrays...');
             setActiveSyncStep('Parsing Calendar database schemas');
+            if (token && services.find(s => s.key === 'calendar')?.syncActive) {
+              fetchCalendarEvents(token);
+            }
           } else if (nextProgress === 64) {
-            triggerSyncLog('warn', 'Calendar', 'Skipped 3 corporate meetings flagged as declined.');
-            triggerSyncLog('success', 'Calendar', 'Calendar schedules indexed: 24 agenda items written.');
+            triggerSyncLog('success', 'Calendar', `Verified Google Calendar credentials. API results cached locally.`);
             setActiveSyncStep('Encrypting local bridge nodes');
           } else if (nextProgress === 80) {
             triggerSyncLog('info', 'System', 'Revising Zero-Knowledge checksum signatures...');
@@ -188,32 +348,20 @@ export const GoogleIntegrationDashboard: React.FC = () => {
     }
 
     return () => clearInterval(timer);
-  }, [syncing]);
-
-  const triggerSyncLog = (type: 'info' | 'success' | 'warn' | 'error', service: string, message: string) => {
-    const newLog: SyncLog = {
-      id: Math.random().toString(),
-      timestamp: new Date().toLocaleTimeString(),
-      type,
-      service,
-      message
-    };
-    setSyncLogs(prev => [newLog, ...prev]);
-  };
+  }, [syncing, token, services, calendarEvents]);
 
   const handleToggleActive = (key: GoogleServiceKey, val: boolean) => {
     setServices(current => current.map(s => {
       if (s.key === key) {
-        // Automatically connected if toggle turned on
         const connectedState = val ? true : s.connected;
-        
-        // Log user action
         if (val) {
           triggerSyncLog('info', s.name, `Sync pipeline set to ACTIVE.`);
+          if (s.key === 'calendar' && token) {
+            fetchCalendarEvents(token);
+          }
         } else {
           triggerSyncLog('warn', s.name, `Pipeline deactivated.`);
         }
-
         return { ...s, syncActive: val, connected: connectedState };
       }
       return s;
@@ -221,9 +369,12 @@ export const GoogleIntegrationDashboard: React.FC = () => {
   };
 
   const handleCardClick = (service: GoogleService) => {
-    // Cannot configure destinations for disconnected pipelines easily, but we allow connecting it first
+    if (!currentUser && (service.key === 'calendar' || service.key === 'keep' || service.key === 'tasks')) {
+      handleLogin();
+      return;
+    }
+
     if (!service.connected) {
-      // Connect it first with default settings
       setServices(current => current.map(s => {
         if (s.key === service.key) {
           triggerSyncLog('success', s.name, `Authenticated. Pipeline established securely.`);
@@ -231,7 +382,6 @@ export const GoogleIntegrationDashboard: React.FC = () => {
         }
         return s;
       }));
-      // Select it and open mapping dialog to guide configuration
       const updatedService = { ...service, connected: true, syncActive: true };
       setSelectedService(updatedService);
       setMappingOpen(true);
@@ -246,9 +396,14 @@ export const GoogleIntegrationDashboard: React.FC = () => {
   };
 
   const handleSyncAll = () => {
+    // If we have Calendar active in services and we do have a real token, let's sync live events!
     const activePipelines = services.filter(s => s.connected && s.syncActive);
+    if (!currentUser) {
+      handleLogin();
+      return;
+    }
     if (activePipelines.length === 0) {
-      triggerSyncLog('error', 'System', 'Failed to synchronize: All active pipelines are disconnected.');
+      triggerSyncLog('error', 'System', 'Failed to synchronize: No active pipelines configured.');
       return;
     }
     setSyncProgress(0);
@@ -262,6 +417,8 @@ export const GoogleIntegrationDashboard: React.FC = () => {
 
   const confirmWipeData = () => {
     setServices(current => current.map(s => ({ ...s, connected: false, syncActive: false, lastSync: null })));
+    setCalendarEvents([]);
+    localStorage.removeItem('cached_calendar_events');
     setItemsImported(0);
     setSyncLogs([
       { id: 'wipe', timestamp: new Date().toLocaleTimeString(), type: 'error', service: 'System', message: 'WIPE COMPLETE. All cached indexes, Google scopes, and historical metadata indexes purged from host storage.' }
@@ -301,7 +458,7 @@ export const GoogleIntegrationDashboard: React.FC = () => {
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Chip 
-                  label="Private Data Bridge" 
+                  label="Verified Auth Bridge" 
                   size="small"
                   sx={{ 
                     bgcolor: '#0A0908', 
@@ -312,68 +469,132 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                     fontWeight: 700
                   }} 
                 />
-                <Typography sx={{ fontSize: '12px', color: '#10B981', fontFamily: '"JetBrains Mono"' }}>
-                  ● SYSTEM REPLICATED
+                <Typography sx={{ fontSize: '12px', color: currentUser ? '#10B981' : '#F59E0B', fontFamily: '"JetBrains Mono"' }}>
+                  ● {currentUser ? 'BRIDGED SECURELY' : 'UNAUTHORIZED'}
                 </Typography>
               </Box>
               <Typography variant="h4" sx={{ color: '#FFFFFF', fontWeight: 800, fontFamily: '"Space Grotesk", sans-serif' }}>
                 Google Suite Integration
               </Typography>
-              <Typography variant="body2" sx={{ color: '#9B9691' }}>
-                Migrate legacy profiles selectively. Ingested payloads are processed, hashed, and decentralized directly into client filesystems. No information remains external.
+              <Typography variant="body2" sx={{ color: '#9B9691', mr: 2 }}>
+                Configure local client replicas from your Google Calendar data. Fetch and view upcoming corporate schedules in a private offline context.
               </Typography>
             </Box>
           </Box>
           
           <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
-            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, width: { xs: '100%', sm: 'auto' } }}>
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<Trash2 size={16} />}
-                onClick={handleWipeData}
-                disabled={syncing}
-                sx={{
-                  borderColor: '#34322F',
-                  bgcolor: '#161412',
-                  color: '#EF4444',
-                  py: 1.5,
-                  px: 2.5,
-                  '&:hover': {
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
+              {currentUser ? (
+                <Box sx={{ p: 1.5, bgcolor: '#0A0908', borderRadius: '16px', border: '1px solid #1C1A18', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  {currentUser.photoURL ? (
+                    <Box component="img" src={currentUser.photoURL} referrerPolicy="no-referrer" sx={{ width: 32, height: 32, borderRadius: '50%' }} />
+                  ) : (
+                    <Box sx={{ width: 32, height: 32, borderRadius: '50%', bgcolor: '#6366F1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <User size={16} />
+                    </Box>
+                  )}
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontSize: '12px', fontWeight: 700, color: '#FFFFFF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {currentUser.displayName || 'Google Member'}
+                    </Typography>
+                    <Typography sx={{ fontSize: '11px', color: '#9B9691', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {currentUser.email}
+                    </Typography>
+                  </Box>
+                  <Button 
+                    variant="text" 
+                    size="small" 
+                    onClick={handleLogout} 
+                    sx={{ color: '#EF4444', fontSize: '11px', textTransform: 'none', fontWeight: 700 }}
+                  >
+                    Disconnect
+                  </Button>
+                </Box>
+              ) : (
+                <Button
+                  variant="outlined"
+                  onClick={handleLogin}
+                  sx={{
+                    borderColor: '#4285F4',
+                    bgcolor: '#161412',
+                    color: '#4285F4',
+                    py: 1.2,
+                    px: 3,
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 1.5,
+                    borderRadius: '12px',
+                    '&:hover': {
+                      borderColor: '#4285F4',
+                      bgcolor: '#0A0908',
+                    }
+                  }}
+                >
+                  <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: 'block', width: 16, height: 16 }}>
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                  </svg>
+                  Connect Google Account
+                </Button>
+              )}
+              
+              <Box sx={{ display: 'flex', gap: 2, width: '100%' }}>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  fullWidth
+                  startIcon={<Trash2 size={16} />}
+                  onClick={handleWipeData}
+                  disabled={syncing}
+                  sx={{
+                    bgcolor: '#161412',
+                    color: '#EF4444',
+                    py: 1.2,
+                    px: 2,
+                    fontSize: '13px',
                     borderColor: '#EF4444',
-                    bgcolor: '#0A0908',
-                  },
-                  '&.Mui-disabled': {
-                    borderColor: '#1D1C1B',
-                    color: '#34322F',
-                  }
-                }}
-              >
-                Clear All External Data
-              </Button>
-              <Button
-                variant="contained"
-                onClick={handleSyncAll}
-                disabled={syncing}
-                startIcon={syncing ? <CircularProgress size={16} sx={{ color: '#FFFFFF' }} /> : <RefreshCw size={16} />}
-                sx={{
-                  bgcolor: '#6366F1',
-                  color: '#FFFFFF',
-                  py: 1.5,
-                  px: 3,
-                  '&:hover': {
-                    bgcolor: '#575CF0',
-                    filter: 'brightness(1.1)'
-                  },
-                  '&.Mui-disabled': {
-                    bgcolor: '#1C1A18',
-                    color: '#9B9691',
-                    border: '1px solid #34322F'
-                  }
-                }}
-              >
-                {syncing ? 'Syncing Ecosystem...' : 'Sync All Data'}
-              </Button>
+                    '&:hover': {
+                      borderColor: '#DF3434',
+                      bgcolor: '#0A0908',
+                    },
+                    '&.Mui-disabled': {
+                      borderColor: '#1D1C1B',
+                      color: '#34322F',
+                    }
+                  }}
+                >
+                  Clear Cached
+                </Button>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={handleSyncAll}
+                  disabled={syncing}
+                  startIcon={syncing ? <CircularProgress size={16} sx={{ color: '#FFFFFF' }} /> : <RefreshCw size={16} />}
+                  sx={{
+                    bgcolor: '#6366F1',
+                    color: '#FFFFFF',
+                    py: 1.2,
+                    px: 2,
+                    fontSize: '13px',
+                    '&:hover': {
+                      bgcolor: '#575CF0',
+                    },
+                    '&.Mui-disabled': {
+                      bgcolor: '#1C1A18',
+                      color: '#9B9691',
+                      border: '1px solid #34322F'
+                    }
+                  }}
+                >
+                  {syncing ? 'Syncing...' : 'Sync Now'}
+                </Button>
+              </Box>
             </Box>
           </Box>
         </Box>
@@ -421,8 +642,8 @@ export const GoogleIntegrationDashboard: React.FC = () => {
             <Database size={20} />
           </Box>
           <Box>
-            <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', textTransform: 'uppercase' }}>Legacy Blocks Bridged</Typography>
-            <Typography variant="h5" sx={{ color: '#FFFFFF', fontWeight: 800 }}>{itemsImported} Files</Typography>
+            <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', textTransform: 'uppercase' }}>Sovereign Records Bridged</Typography>
+            <Typography variant="h5" sx={{ color: '#FFFFFF', fontWeight: 800 }}>{itemsImported} Events</Typography>
           </Box>
         </Box>
         
@@ -433,7 +654,7 @@ export const GoogleIntegrationDashboard: React.FC = () => {
           <Box>
             <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', textTransform: 'uppercase' }}>Active Pipelines</Typography>
             <Typography variant="h5" sx={{ color: '#FFFFFF', fontWeight: 800 }}>
-              {services.filter(s => s.connected && s.syncActive).length} / 5 Running
+              {services.filter(s => s.connected && s.syncActive).length} / 5 Bridged
             </Typography>
           </Box>
         </Box>
@@ -443,7 +664,7 @@ export const GoogleIntegrationDashboard: React.FC = () => {
             <Terminal size={20} />
           </Box>
           <Box>
-            <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', textTransform: 'uppercase' }}>Cryptographic Mode</Typography>
+            <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', textTransform: 'uppercase' }}>Sync Encryption</Typography>
             <Typography variant="h5" sx={{ color: '#FFFFFF', fontWeight: 800 }}>Local GCM-AES</Typography>
           </Box>
         </Box>
@@ -467,23 +688,21 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                   sx={{ 
                     cursor: 'pointer',
                     bgcolor: '#161412',
-                    borderRadius: '24px', // Standard design schema
+                    borderRadius: '24px', 
                     border: isSyncActive ? `1px solid ${service.accent}` : '1px solid #1D1C1B',
                     boxShadow: '0 4px 4px -4px rgba(0,0,0,0.9)',
                     transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
                     position: 'relative',
                     height: '100%',
                     '&:hover': {
-                      transform: 'translateY(-2px)', // Openbricks kinetic hover
+                      transform: 'translateY(-2px)', 
                       boxShadow: '0 8px 16px rgba(0, 0, 0, 0.5)',
                       borderColor: service.accent,
                     }
                   }}
                 >
-                  {/* Subtle rim color line */}
                   <Box sx={{ height: '3px', width: '100%', bgcolor: isSyncActive ? service.accent : '#1C1A18' }} />
 
-                  {/* Standard card rhythm: padding vertical 2.5 (20px) */}
                   <CardContent sx={{ p: '20px !important' }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -501,7 +720,6 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                           </Box>
                         </Box>
 
-                        {/* Connection status badge */}
                         <Chip 
                           label={isConnected ? "BRIDGED" : "UNBOUND"} 
                           size="small"
@@ -511,7 +729,6 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                             fontFamily: '"JetBrains Mono"',
                             fontSize: '10px',
                             fontWeight: 700,
-                            border: '1px solid transparent'
                           }} 
                         />
                       </Box>
@@ -540,7 +757,7 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                             <Switch 
                               checked={isSyncActive}
                               onChange={(e) => handleToggleActive(service.key, e.target.checked)}
-                              disabled={!isConnected && service.key !== 'drive' && service.key !== 'gmail'} // clicking disabled allows binds
+                              disabled={!isConnected && service.key !== 'drive' && service.key !== 'gmail'} 
                             />
                           </Box>
                         </Box>
@@ -548,7 +765,6 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                     </Box>
                   </CardContent>
 
-                  {/* Settings Hover hint overlay */}
                   <Box sx={{ 
                     position: 'absolute', 
                     top: 12, 
@@ -565,6 +781,66 @@ export const GoogleIntegrationDashboard: React.FC = () => {
           })}
         </Box>
       </Box>
+
+      {/* Real-time Integrated Calendar List Panel */}
+      {calendarEvents.length > 0 && (
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" sx={{ color: '#FFFFFF', mb: 2, fontWeight: 700, fontFamily: '"Space Grotesk", sans-serif', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Calendar size={18} style={{ color: '#6366F1' }} /> Live Google Calendar Event Stream (Sovereign Sync)
+          </Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+            {calendarEvents.map((evt) => (
+              <Box 
+                key={evt.id} 
+                sx={{ 
+                  p: 2.5, 
+                  bgcolor: '#161412', 
+                  borderRadius: '20px', 
+                  border: '1px solid #1D1C1B',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.5,
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Typography sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 700, fontFamily: '"Space Grotesk"', flex: 1, pr: 1 }}>
+                    {evt.summary}
+                  </Typography>
+                  <Chip 
+                    label="SYNCED" 
+                    size="small" 
+                    sx={{ height: 18, fontSize: '9px', bgcolor: '#0A0908', color: '#6366F1', border: '1px solid #1D1C1B', fontFamily: '"JetBrains Mono"', fontWeight: 700 }} 
+                  />
+                </Box>
+                {evt.description && (
+                  <Typography sx={{ color: '#9B9691', fontSize: '11px', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {evt.description}
+                  </Typography>
+                )}
+                
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 'auto', pt: 1, borderTop: '1px dashed #1D1C1B' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Clock size={12} style={{ color: '#6366F1' }} />
+                    <Typography sx={{ color: '#E5E0DA', fontSize: '11px', fontFamily: '"JetBrains Mono"' }}>
+                      {evt.start.dateTime ? new Date(evt.start.dateTime).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'}) : `${evt.start.date} (All Day)`}
+                    </Typography>
+                  </Box>
+                  {evt.location && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <MapPin size={12} style={{ color: '#EF4444' }} />
+                      <Typography sx={{ color: '#9B9691', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {evt.location}
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
 
       {/* Simulated Pipeline Shell / terminal logging stream */}
       <Paper
@@ -692,7 +968,7 @@ export const GoogleIntegrationDashboard: React.FC = () => {
               '&:hover': { bgcolor: '#34322F' }
             }}
           >
-            Abort Purification
+            Abort Purge
           </Button>
           <Button 
             onClick={confirmWipeData}

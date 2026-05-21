@@ -48,3 +48,19 @@ export interface GmailMapping {
   connectChannel: string; // Kylrix Connect channel destination
   filterKeyword: string;
 }
+
+export interface CalendarEvent {
+  id: string;
+  summary: string;
+  description?: string;
+  start: {
+    dateTime?: string;
+    date?: string;
+  };
+  end: {
+    dateTime?: string;
+    date?: string;
+  };
+  location?: string;
+}
+
