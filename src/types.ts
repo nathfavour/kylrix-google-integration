@@ -1,6 +1,6 @@
 export type KylrixApp = 'root' | 'accounts' | 'kylrix' | 'vault' | 'flow' | 'note' | 'connect';
 
-export type GoogleServiceKey = 'keep' | 'tasks' | 'calendar' | 'drive' | 'gmail';
+export type GoogleServiceKey = 'keep' | 'tasks' | 'calendar' | 'drive' | 'gmail' | 'docs';
 
 export interface GoogleService {
   key: GoogleServiceKey;
@@ -47,6 +47,18 @@ export interface DriveMapping {
 export interface GmailMapping {
   connectChannel: string; // Kylrix Connect channel destination
   filterKeyword: string;
+}
+
+export interface DocsMapping {
+  noteDirectory: string; // Kylrix Note location
+  importAsMarkdown: boolean;
+}
+
+export interface GoogleDoc {
+  id: string;
+  title: string;
+  bodyContent?: string;
+  lastModified?: string;
 }
 
 export interface CalendarEvent {

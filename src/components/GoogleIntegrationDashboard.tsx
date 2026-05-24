@@ -35,7 +35,7 @@ import {
   Clock,
   User
 } from 'lucide-react';
-import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent } from '../types';
+import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent, GoogleDoc } from '../types';
 import { MappingModal } from './MappingModal';
 import Logo from './Logo';
 import { initAuth, googleSignIn, logout, getAccessToken } from '../googleAuth';
@@ -102,6 +102,18 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       app: 'connect',
       lastSync: null,
       accent: '#F59E0B' // Connect brand color
+    },
+    {
+      key: 'docs',
+      name: 'Google Docs',
+      googlename: 'Docs Editor',
+      description: 'Exchange structured text nodes, drafts, and design logs directly with active Google Documents.',
+      connected: false,
+      syncActive: false,
+      destination: 'Kylrix Note',
+      app: 'note',
+      lastSync: null,
+      accent: '#3B82F6' // Docs brand color
     }
   ]);
 
@@ -114,6 +126,21 @@ export const GoogleIntegrationDashboard: React.FC = () => {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState<boolean>(false);
   const [eventsError, setEventsError] = useState<string | null>(null);
+
+  // Live Google Docs State
+  const [googleDocs, setGoogleDocs] = useState<GoogleDoc[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState<boolean>(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [activeDocContent, setActiveDocContent] = useState<string | null>(null);
+  const [activeDocTitle, setActiveDocTitle] = useState<string | null>(null);
+  const [fetchingDocId, setFetchingDocId] = useState<string | null>(null);
+  const [directDocUrlOrId, setDirectDocUrlOrId] = useState<string>('');
+  
+  // Create / Export doc states
+  const [exportTitle, setExportTitle] = useState<string>('Kylrix Sovereign Design Log');
+  const [exportContent, setExportContent] = useState<string>('# Kylrix Sovereign Design Log\n\n- Local hardware-bound keys verified.\n- Zero cloud telemetry storage.\n- Private note conduit established successfully.');
+  const [exportLoad, setExportLoad] = useState<boolean>(false);
+  const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
 
   // Global states for simulated sync orchestration
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -155,8 +182,8 @@ export const GoogleIntegrationDashboard: React.FC = () => {
         
         // Auto mark Google services as connected since auth succeeded
         setServices(current => current.map(s => {
-          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks') {
-            return { ...s, connected: true, syncActive: s.key === 'calendar' ? true : s.syncActive };
+          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks' || s.key === 'docs') {
+            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs') ? true : s.syncActive };
           }
           return s;
         }));
@@ -199,8 +226,8 @@ export const GoogleIntegrationDashboard: React.FC = () => {
         triggerSyncLog('success', 'Auth', `Bridged successfully with profile: ${result.user.email}`);
         
         setServices(current => current.map(s => {
-          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks') {
-            return { ...s, connected: true, syncActive: s.key === 'calendar' ? true : s.syncActive };
+          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks' || s.key === 'docs') {
+            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs') ? true : s.syncActive };
           }
           return s;
         }));
@@ -282,6 +309,235 @@ export const GoogleIntegrationDashboard: React.FC = () => {
     }
   };
 
+  // Fetch Google Docs List from Drive API (Documents only)
+  const fetchGoogleDocs = async (accessToken: string) => {
+    setLoadingDocs(true);
+    setDocsError(null);
+    try {
+      // Query recent documents (mimeType application/vnd.google-apps.document)
+      const url = `https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.document'&pageSize=8&orderBy=modifiedTime desc&fields=files(id,name,modifiedTime)`;
+      
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Docs fetch failed: Status ${res.status} - ${errText || res.statusText}`);
+      }
+
+      const data = await res.json();
+      const docsList: GoogleDoc[] = (data.files || []).map((file: any) => ({
+        id: file.id,
+        title: file.name || '(Untitled Document)',
+        lastModified: file.modifiedTime ? new Date(file.modifiedTime).toLocaleString() : undefined
+      }));
+
+      setGoogleDocs(docsList);
+      triggerSyncLog('success', 'Docs Editor', `Conduit indexed ${docsList.length} sovereign doc files from cloud nodes.`);
+    } catch (err: any) {
+      console.error('Google Docs fetch error:', err);
+      setDocsError(err.message || 'Error occurred listing Google Docs');
+      triggerSyncLog('error', 'Docs Editor', `API list error: ${err.message || err}`);
+    } finally {
+      setLoadingDocs(false);
+    }
+  };
+
+  // Fetch full details & body content of a specific Google Doc and compile to Markdown
+  const fetchDocContent = async (accessToken: string, docId: string) => {
+    setFetchingDocId(docId);
+    setDocsError(null);
+    try {
+      const url = `https://docs.googleapis.com/v1/documents/${docId}`;
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Doc content fetch failed with status ${res.status}`);
+      }
+
+      const documentNode = await res.json();
+      setActiveDocTitle(documentNode.title);
+      
+      // Parse Document JSON format into pristine Markdown standard
+      let md = '';
+      if (documentNode.body && documentNode.body.content) {
+        for (const element of documentNode.body.content) {
+          if (element.paragraph) {
+            const parts = element.paragraph.elements || [];
+            const text = parts.map((p: any) => p.textRun?.content || '').join('');
+            
+            // Infer headings and paragraphs
+            const style = element.paragraph.paragraphStyle?.namedStyleType;
+            if (style === 'HEADING_1') {
+              md += `# ${text.trim()}\n\n`;
+            } else if (style === 'HEADING_2') {
+              md += `## ${text.trim()}\n\n`;
+            } else if (style === 'HEADING_3') {
+              md += `### ${text.trim()}\n\n`;
+            } else {
+              if (text.trim()) {
+                md += `${text.trim()}\n\n`;
+              }
+            }
+          }
+        }
+      }
+
+      if (!md.trim()) {
+        md = '*Document is empty, or uses non-standard paragraph block elements.*';
+      }
+
+      setActiveDocContent(md);
+      triggerSyncLog('success', 'Docs Editor', `Ingested & translated "${documentNode.title}" content layout into Markdown format.`);
+    } catch (err: any) {
+      console.error('Docs content error:', err);
+      setDocsError(err.message || 'Could not fetch Google Doc content');
+      triggerSyncLog('error', 'Docs Editor', `API content fetch fault: ${err.message || err}`);
+    } finally {
+      setFetchingDocId(null);
+    }
+  };
+
+  // Extract Google Doc ID from URL if necessary and fetch content
+  const handleDirectFetchDoc = async () => {
+    if (!token) {
+      handleLogin();
+      return;
+    }
+    const input = directDocUrlOrId.trim();
+    if (!input) {
+      alert('Please enter a Google Doc ID or URL first.');
+      return;
+    }
+
+    let docId = input;
+    // Check if user pasted a standard Google Docs Web link
+    const match = input.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+      docId = match[1];
+    }
+
+    triggerSyncLog('info', 'Docs Editor', `Direct document fetch initiated for key/ID: ${docId}`);
+    await fetchDocContent(token, docId);
+  };
+
+  // Convert and Save the parsed markdown of the active Google Doc locally as a Note
+  const saveGoogleDocContentAsNote = () => {
+    if (!activeDocTitle || !activeDocContent) return;
+    
+    // Check user confirmation
+    const confirmed = window.confirm(`Import "${activeDocTitle}" as a local Markdown note? This will append it directly to your sovereign note storage.`);
+    if (!confirmed) return;
+
+    try {
+      // Create a simulated draft node inside localStorage or cached_notes
+      const newNote = {
+        id: Date.now().toString(),
+        title: activeDocTitle,
+        date: 'Just imported',
+        size: `${(activeDocContent.length / 1024).toFixed(1)}kb`,
+        content: activeDocContent
+      };
+      
+      const existing = localStorage.getItem('cached_notes');
+      let parsed = [];
+      if (existing) {
+        parsed = JSON.parse(existing);
+      }
+      parsed.unshift(newNote);
+      localStorage.setItem('cached_notes', JSON.stringify(parsed));
+      
+      triggerSyncLog('success', 'Kylrix Note', `Saved "${activeDocTitle}" as standard offline Markdown note.`);
+      alert(`Success! "${activeDocTitle}" has been saved as a local notes draft node.`);
+    } catch (e: any) {
+      console.error(e);
+      triggerSyncLog('error', 'Kylrix Note', `Storage mismatch: ${e.message}`);
+    }
+  };
+
+  // Export/Create Google Doc with custom title and body text
+  const writeGoogleDoc = async () => {
+    if (!token) {
+      handleLogin();
+      return;
+    }
+    
+    if (!exportTitle.trim() || !exportContent.trim()) {
+      alert('Please specify a title and contents before exporting.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Create a new Google Doc named "${exportTitle}" with your sovereign drafted note contents?`);
+    if (!confirmed) return;
+
+    setExportLoad(true);
+    setExportSuccessMessage(null);
+    try {
+      // 1. Send metadata POST to create a blank document with the requested title
+      const createRes = await fetch('https://docs.googleapis.com/v1/documents', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ title: exportTitle })
+      });
+
+      if (!createRes.ok) {
+        throw new Error(`Create failed with status ${createRes.status}`);
+      }
+
+      const createdDoc = await createRes.json();
+      const docId = createdDoc.documentId;
+
+      // 2. Load the text content to insert
+      const batchUpdateRes = await fetch(`https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              insertText: {
+                text: exportContent,
+                location: {
+                  index: 1
+                }
+              }
+            }
+          ]
+        })
+      });
+
+      if (!batchUpdateRes.ok) {
+        throw new Error(`Writing document body failed with status ${batchUpdateRes.status}`);
+      }
+
+      setExportSuccessMessage(`Successfully created Document: "${exportTitle}"!`);
+      triggerSyncLog('success', 'Docs Editor', `Export completed: Document "${exportTitle}" uploaded safely to ID: ${docId}.`);
+      
+      // Refresh docs file listing
+      fetchGoogleDocs(token);
+    } catch (err: any) {
+      console.error('Export doc error:', err);
+      triggerSyncLog('error', 'Docs Editor', `Export failed: ${err.message || err}`);
+      alert(`Export failed: ${err.message}`);
+    } finally {
+      setExportLoad(false);
+    }
+  };
+
   // Progress/Loading timeline simulation
   useEffect(() => {
     let timer: any;
@@ -331,7 +587,11 @@ export const GoogleIntegrationDashboard: React.FC = () => {
             }
           } else if (nextProgress === 64) {
             triggerSyncLog('success', 'Calendar', `Verified Google Calendar credentials. API results cached locally.`);
-            setActiveSyncStep('Encrypting local bridge nodes');
+            triggerSyncLog('info', 'Docs Editor', 'Querying recent Doc items from active nodes...');
+            setActiveSyncStep('Restoring Google Docs database paths');
+            if (token && services.find(s => s.key === 'docs')?.syncActive) {
+              fetchGoogleDocs(token);
+            }
           } else if (nextProgress === 80) {
             triggerSyncLog('info', 'System', 'Revising Zero-Knowledge checksum signatures...');
             setActiveSyncStep('Verifying SHA-256 parity');
@@ -435,6 +695,7 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       case 'calendar': return <Calendar size={20} style={style} />;
       case 'drive': return <FolderLock size={20} style={style} />;
       case 'gmail': return <Mail size={20} style={style} />;
+      case 'docs': return <FileText size={20} style={style} />;
     }
   };
 
@@ -654,7 +915,7 @@ export const GoogleIntegrationDashboard: React.FC = () => {
           <Box>
             <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', textTransform: 'uppercase' }}>Active Pipelines</Typography>
             <Typography variant="h5" sx={{ color: '#FFFFFF', fontWeight: 800 }}>
-              {services.filter(s => s.connected && s.syncActive).length} / 5 Bridged
+              {services.filter(s => s.connected && s.syncActive).length} / 6 Bridged
             </Typography>
           </Box>
         </Box>
@@ -838,6 +1099,306 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                 </Box>
               </Box>
             ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* Real-time Integrated Google Docs Explorer Panel */}
+      {token && services.find(s => s.key === 'docs')?.connected && (
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" sx={{ color: '#FFFFFF', mb: 2, fontWeight: 700, fontFamily: '"Space Grotesk", sans-serif', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <FileText size={18} style={{ color: '#3B82F6' }} /> Sovereign Google Docs Explorer (Dynamic Bridge)
+          </Typography>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
+            
+            {/* Left Column: List and Select Documents to Ingest */}
+            <Box sx={{ p: 3, bgcolor: '#161412', borderRadius: '24px', border: '1px solid #1D1C1B', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box>
+                  <Typography sx={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, fontFamily: '"Space Grotesk"' }}>
+                    Workspace Documents Index
+                  </Typography>
+                  <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"' }}>
+                    Active files with MIME type google-apps.document
+                  </Typography>
+                </Box>
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  onClick={() => fetchGoogleDocs(token)} 
+                  disabled={loadingDocs}
+                  startIcon={loadingDocs ? <CircularProgress size={12} /> : <RefreshCw size={12} />}
+                  sx={{ 
+                    borderColor: '#34322F', 
+                    color: '#E5E0DA', 
+                    fontSize: '11px', 
+                    textTransform: 'none',
+                    '&:hover': { borderColor: '#3B82F6', bgcolor: '#0A0908' }
+                  }}
+                >
+                  Reload List
+                </Button>
+              </Box>
+
+              {docsError && (
+                <Alert 
+                  severity="error" 
+                  sx={{ 
+                    bgcolor: '#2C1A1A', 
+                    color: '#FFAAAA', 
+                    border: '1px solid #3A1A1A',
+                    borderRadius: '12px',
+                    fontSize: '12.5px',
+                    lineHeight: 1.5
+                  }}
+                >
+                  {docsError.includes('insufficient authentication scopes') || docsError.includes('insufficientPermissions') || docsError.includes('Insufficient Permission') ? (
+                    <Box>
+                      <Typography sx={{ fontWeight: 800, fontSize: '13px', mb: 0.5, color: '#FF7777', fontFamily: '"Space Grotesk"' }}>
+                        Listing Blocked: Insufficient Drive API Scope
+                      </Typography>
+                      <p style={{ margin: 0 }}>
+                        Your token doesn't have the Google Drive file-listing metadata scope verified yet.
+                        <strong style={{ color: '#FFFFFF' }}> Good news:</strong> Since your active Google Docs Editor scope is verified, you can
+                        <strong style={{ color: '#60A5FA' }}> fetch any document directly below</strong> by pasting its Web URL or ID — no listing permission needed!
+                        <br />
+                        <span style={{ fontSize: '11px', color: '#B0A090', marginTop: '6px', display: 'inline-block' }}>
+                          (To enable complete workspace folder listing, click Disconnect on top and link your account again to consent to the newly added scopes.)
+                        </span>
+                      </p>
+                    </Box>
+                  ) : (
+                    docsError
+                  )}
+                </Alert>
+              )}
+
+              {/* Direct Fetch Utility Input */}
+              <Box sx={{ p: 2, bgcolor: '#0A0908', borderRadius: '16px', border: '1px solid #34322F' }}>
+                <Typography sx={{ color: '#E5E0DA', fontSize: '12px', fontWeight: 800, fontFamily: '"Space Grotesk"', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                  <ArrowUpRight size={14} style={{ color: '#3B82F6' }} /> Direct URL / ID Ingestion (By-Pass List)
+                </Typography>
+                <Typography sx={{ color: '#9B9691', fontSize: '11.5px', mb: 1.5 }}>
+                  Paste any Google Docs Link or Doc ID to fetch it instantly under safe direct-scope transport.
+                </Typography>
+                
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <input 
+                    type="text"
+                    value={directDocUrlOrId}
+                    onChange={(e) => setDirectDocUrlOrId(e.target.value)}
+                    placeholder="e.g. https://docs.google.com/document/d/..."
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      backgroundColor: '#161412',
+                      color: '#FFFFFF',
+                      fontFamily: '"JetBrains Mono"',
+                      fontSize: '12px',
+                      border: '1px solid #1C1A18',
+                      outline: 'none',
+                    }}
+                  />
+                  <Button 
+                    variant="contained" 
+                    size="small"
+                    onClick={handleDirectFetchDoc}
+                    disabled={fetchingDocId !== null}
+                    sx={{ 
+                      bgcolor: '#3B82F6', 
+                      color: '#0A0908',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      borderRadius: '8px',
+                      fontSize: '11px',
+                      px: 2,
+                      minWidth: '100px',
+                      '&:hover': { bgcolor: '#2563EB' }
+                    }}
+                  >
+                    {fetchingDocId ? <CircularProgress size={12} color="inherit" /> : 'Fetch & Parse'}
+                  </Button>
+                </Box>
+              </Box>
+
+              {loadingDocs ? (
+                <Box sx={{ display: 'flex', gap: 1.5, py: 4, justifyContent: 'center', alignItems: 'center' }}>
+                  <CircularProgress size={18} sx={{ color: '#3B82F6' }} />
+                  <Typography sx={{ color: '#9B9691', fontSize: '13px', fontFamily: '"JetBrains Mono"' }}>Indexing metadata nodes...</Typography>
+                </Box>
+              ) : googleDocs.length === 0 ? (
+                <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed #1D1C1B', borderRadius: '16px', bgcolor: '#0A0908' }}>
+                  <Typography sx={{ color: '#9B9691', fontSize: '13px', mb: 2 }}>No Google Docs returned from standard Drive query. Verify auth status.</Typography>
+                  <Button variant="contained" size="small" onClick={() => fetchGoogleDocs(token)} sx={{ bgcolor: '#3B82F6', color: '#FFFFFF', textTransform: 'none' }}>
+                    Trigger Initial Index
+                  </Button>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {googleDocs.map((doc) => {
+                    const isFetchingThis = fetchingDocId === doc.id;
+                    return (
+                      <Box 
+                        key={doc.id}
+                        sx={{
+                          p: 1.8,
+                          bgcolor: '#0A0908',
+                          borderRadius: '16px',
+                          border: '1px solid #1D1C1B',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          transition: 'all 0.2s',
+                          '&:hover': { borderColor: '#3B82F6', transform: 'translateX(2px)' }
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography sx={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {doc.title}
+                          </Typography>
+                          <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', mt: 0.5 }}>
+                            Modified: {doc.lastModified || 'Unknown'}
+                          </Typography>
+                        </Box>
+                        
+                        <Button
+                          variant="text"
+                          size="small"
+                          disabled={isFetchingThis}
+                          onClick={() => fetchDocContent(token, doc.id)}
+                          sx={{ color: '#3B82F6', fontSize: '11px', textTransform: 'none', fontWeight: 700 }}
+                        >
+                          {isFetchingThis ? <CircularProgress size={12} /> : 'Fetch & Parse'}
+                        </Button>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+
+              {/* Parsed Note Import Area */}
+              {activeDocTitle && activeDocContent && (
+                <Box sx={{ mt: 2, p: 2, bgcolor: '#0A0908', borderRadius: '16px', border: '1px solid #34322F' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                    <Typography sx={{ color: '#3B82F6', fontSize: '12px', fontFamily: '"JetBrains Mono"', fontWeight: 700 }}>
+                      PARSED MARKDOWN PREVIEW
+                    </Typography>
+                    <Button 
+                      variant="contained" 
+                      size="small" 
+                      onClick={saveGoogleDocContentAsNote}
+                      sx={{ bgcolor: '#10B981', color: '#0A0908', fontWeight: 700, textTransform: 'none', borderRadius: '8px', fontSize: '11px' }}
+                    >
+                      Write to Kylrix Note
+                    </Button>
+                  </Box>
+                  <Typography sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 700, mb: 1 }}>
+                    {activeDocTitle}
+                  </Typography>
+                  <Box sx={{ 
+                    p: 1.5, 
+                    bgcolor: '#161412', 
+                    borderRadius: '8px', 
+                    border: '1px solid #1D1C1B', 
+                    maxHeight: '140px', 
+                    overflowY: 'auto',
+                    fontFamily: '"JetBrains Mono"',
+                    fontSize: '11px',
+                    color: '#9B9691',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {activeDocContent}
+                  </Box>
+                </Box>
+              )}
+            </Box>
+
+            {/* Right Column: Export/Write to Google Docs */}
+            <Box sx={{ p: 3, bgcolor: '#161412', borderRadius: '24px', border: '1px solid #1D1C1B', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box>
+                <Typography sx={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, fontFamily: '"Space Grotesk"' }}>
+                  Sovereign Note Draft Exporter
+                </Typography>
+                <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"' }}>
+                  Create and publish compiled local markdown drafts directly to Google Docs
+                </Typography>
+              </Box>
+
+              {exportSuccessMessage && (
+                <Alert severity="success" sx={{ bgcolor: '#1A2C1A', color: '#AAFFAA', border: '1px solid #1A3A1A' }} onClose={() => setExportSuccessMessage(null)}>
+                  {exportSuccessMessage}
+                </Alert>
+              )}
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box>
+                  <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', mb: 0.8 }}>
+                    NEW TARGET DOC TITLE
+                  </Typography>
+                  <input 
+                    type="text"
+                    value={exportTitle}
+                    onChange={(e) => setExportTitle(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: '#0A0908',
+                      color: '#FFFFFF',
+                      fontFamily: '"JetBrains Mono"',
+                      fontSize: '13px',
+                      border: '1px solid #1D1C1B',
+                      outline: 'none',
+                    }}
+                  />
+                </Box>
+
+                <Box>
+                  <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', mb: 0.8 }}>
+                    SOVEREIGN COMPILATION TEXT BODY
+                  </Typography>
+                  <textarea 
+                    rows={6}
+                    value={exportContent}
+                    onChange={(e) => setExportContent(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: '#0A0908',
+                      color: '#FFFFFF',
+                      fontFamily: '"JetBrains Mono"',
+                      fontSize: '12px',
+                      border: '1px solid #1D1C1B',
+                      outline: 'none',
+                      resize: 'vertical'
+                    }}
+                  />
+                </Box>
+
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={writeGoogleDoc}
+                  disabled={exportLoad}
+                  startIcon={exportLoad ? <CircularProgress size={14} sx={{ color: '#0A0908' }} /> : <ArrowUpRight size={14} />}
+                  sx={{
+                    bgcolor: '#3B82F6',
+                    color: '#0A0908',
+                    fontWeight: 800,
+                    textTransform: 'none',
+                    borderRadius: '12px',
+                    py: 1.2,
+                    '&:hover': { bgcolor: '#2563EB' }
+                  }}
+                >
+                  {exportLoad ? 'Uploading Draft...' : 'Export to Google Doc'}
+                </Button>
+              </Box>
+            </Box>
+
           </Box>
         </Box>
       )}

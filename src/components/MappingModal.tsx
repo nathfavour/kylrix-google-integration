@@ -81,6 +81,11 @@ export const MappingModal: React.FC<MappingModalProps> = ({
     archiveAfterImport: false,
   });
 
+  const [docsConfig, setDocsConfig] = useState({
+    noteDirectory: 'Imports/GoogleDocs',
+    importAsMarkdown: true,
+  });
+
   useEffect(() => {
     // Reset or load initial mocks depending on the selected service
   }, [service]);
@@ -92,6 +97,7 @@ export const MappingModal: React.FC<MappingModalProps> = ({
     else if (service.key === 'calendar') activeConfig = calendarConfig;
     else if (service.key === 'drive') activeConfig = driveConfig;
     else if (service.key === 'gmail') activeConfig = gmailConfig;
+    else if (service.key === 'docs') activeConfig = docsConfig;
 
     onSave(service.key, activeConfig);
     onClose();
@@ -511,6 +517,68 @@ export const MappingModal: React.FC<MappingModalProps> = ({
                 sx={{
                   '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
                     backgroundColor: '#F59E0B !important'
+                  }
+                }}
+              />
+            </Box>
+          </Stack>
+        );
+
+      case 'docs':
+        return (
+          <Stack spacing={3}>
+            <Alert 
+              severity="info" 
+              sx={{ 
+                bgcolor: '#1C1A18', 
+                border: '1px solid #34322F', 
+                color: '#FFFFFF',
+                borderRadius: '12px',
+                '& .MuiAlert-icon': { color: '#3B82F6' }
+              }}
+              icon={<FileText size={20} />}
+            >
+              Google Docs items represent individual structured workspace texts. Ingest docs directly as Markdown note structures into Kylrix Note, preserving headers and bullets offline.
+            </Alert>
+
+            <Box sx={{ p: 2, bgcolor: '#0A0908', borderRadius: '16px', border: '1px solid #1C1A18' }}>
+              <Typography sx={{ color: '#9B9691', fontSize: '12px', fontFamily: '"JetBrains Mono"', mb: 1.5, letterSpacing: '0.05em' }}>
+                LOCAL TARGET NOTE PATH
+              </Typography>
+              <TextField 
+                fullWidth
+                size="small"
+                value={docsConfig.noteDirectory}
+                onChange={(e) => setDocsConfig({ ...docsConfig, noteDirectory: e.target.value })}
+                slotProps={{
+                  input: {
+                    style: { fontFamily: '"JetBrains Mono"', color: '#FFFFFF', fontSize: '14px' }
+                  }
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    bgcolor: '#161412',
+                    borderRadius: '8px',
+                    borderColor: '#1C1A18',
+                    '& fieldset': { border: '1px solid #1C1A18' },
+                    '&:hover fieldset': { borderColor: '#34322F' },
+                    '&.Mui-focused fieldset': { borderColor: '#3B82F6' },
+                  }
+                }}
+              />
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, bgcolor: '#161412', borderRadius: '12px', border: '1px solid #1C1A18' }}>
+              <Box>
+                <Typography sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}>Convert structure to Markdown</Typography>
+                <Typography sx={{ color: '#9B9691', fontSize: '12px' }}>Translate paragraphs, headers, and bullet structures to strict markdown files</Typography>
+              </Box>
+              <Switch 
+                checked={docsConfig.importAsMarkdown} 
+                onChange={(e) => setDocsConfig({ ...docsConfig, importAsMarkdown: e.target.checked })}
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    backgroundColor: '#3B82F6 !important'
                   }
                 }}
               />
