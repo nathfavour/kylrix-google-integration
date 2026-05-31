@@ -131,4 +131,22 @@ export interface GoogleKeepNote {
   updateTime?: string;
 }
 
+export interface GoogleGmailMessage {
+  id: string;
+  threadId: string;
+  from?: string;
+  to?: string;
+  subject?: string;
+  snippet?: string;
+  body?: string;
+  date?: string;
+  labels?: string[];
+}
+
+export interface GoogleGmailLabel {
+  id: string;
+  name: string;
+  type?: string;
+}
+
 
