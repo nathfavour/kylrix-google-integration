@@ -76,3 +76,32 @@ export interface CalendarEvent {
   location?: string;
 }
 
+export interface GitHubConfig {
+  connected: boolean;
+  tokenType: 'pat' | 'oauth' | null;
+  token: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+  selectedRepo: string | null; // e.g., 'owner/repo'
+}
+
+export interface GitHubIssue {
+  id: number;
+  number: number;
+  title: string;
+  body: string;
+  state: 'open' | 'closed';
+  html_url: string;
+  created_at: string;
+}
+
+export interface GoogleDriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+}
+
+

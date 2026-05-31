@@ -33,9 +33,15 @@ import {
   Database,
   MapPin,
   Clock,
-  User
+  User,
+  Search,
+  Upload,
+  Download,
+  Folder,
+  Eye,
+  File
 } from 'lucide-react';
-import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent, GoogleDoc } from '../types';
+import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent, GoogleDoc, GoogleDriveFile } from '../types';
 import { MappingModal } from './MappingModal';
 import Logo from './Logo';
 import { initAuth, googleSignIn, logout, getAccessToken } from '../googleAuth';
@@ -142,6 +148,18 @@ export const GoogleIntegrationDashboard: React.FC = () => {
   const [exportLoad, setExportLoad] = useState<boolean>(false);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
 
+  // Live Google Drive State
+  const [driveFiles, setDriveFiles] = useState<GoogleDriveFile[]>([]);
+  const [loadingDrive, setLoadingDrive] = useState<boolean>(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
+  const [driveSearch, setDriveSearch] = useState<string>('');
+  
+  // Upload states
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState<boolean>(false);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
   // Global states for simulated sync orchestration
   const [syncing, setSyncing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<number>(0);
@@ -182,14 +200,15 @@ export const GoogleIntegrationDashboard: React.FC = () => {
         
         // Auto mark Google services as connected since auth succeeded
         setServices(current => current.map(s => {
-          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks' || s.key === 'docs') {
-            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs') ? true : s.syncActive };
+          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks' || s.key === 'docs' || s.key === 'drive') {
+            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs' || s.key === 'drive') ? true : s.syncActive };
           }
           return s;
         }));
 
-        // Fetch events if user previously connected
+        // Fetch events and drive files if user previously connected
         fetchCalendarEvents(cachedToken);
+        fetchGoogleDriveFiles(cachedToken);
       },
       () => {
         setCurrentUser(null);
@@ -226,14 +245,15 @@ export const GoogleIntegrationDashboard: React.FC = () => {
         triggerSyncLog('success', 'Auth', `Bridged successfully with profile: ${result.user.email}`);
         
         setServices(current => current.map(s => {
-          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks' || s.key === 'docs') {
-            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs') ? true : s.syncActive };
+          if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks' || s.key === 'docs' || s.key === 'drive') {
+            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs' || s.key === 'drive') ? true : s.syncActive };
           }
           return s;
         }));
 
-        // Fetch initial list of calendar events
+        // Fetch initial list of calendar events and drive files
         await fetchCalendarEvents(result.accessToken);
+        await fetchGoogleDriveFiles(result.accessToken);
       }
     } catch (err: any) {
       console.error(err);
@@ -251,6 +271,8 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       setCurrentUser(null);
       setToken(null);
       setCalendarEvents([]);
+      setDriveFiles([]);
+      setGoogleDocs([]);
       localStorage.removeItem('cached_calendar_events');
       setServices(current => current.map(s => ({ ...s, connected: false, syncActive: false, lastSync: null })));
       triggerSyncLog('warn', 'Auth', 'Google Account disconnected. Active access tokens flushed.');
@@ -306,6 +328,167 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       triggerSyncLog('error', 'Calendar', `API Query fault: ${err.message || err}`);
     } finally {
       setLoadingEvents(false);
+    }
+  };
+
+  // Fetch files from Google Drive
+  const fetchGoogleDriveFiles = async (accessToken: string, queryStr = '') => {
+    setLoadingDrive(true);
+    setDriveError(null);
+    try {
+      let url = 'https://www.googleapis.com/drive/v3/files?pageSize=12&orderBy=modifiedTime desc&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)';
+      if (queryStr.trim()) {
+        const query = encodeURIComponent(`name contains '${queryStr.replace(/'/g, "\\'")}'`);
+        url = `https://www.googleapis.com/drive/v3/files?q=${query}&pageSize=12&orderBy=modifiedTime desc&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)`;
+      }
+      
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Drive list failed: Status ${res.status} - ${errText || res.statusText}`);
+      }
+
+      const data = await res.json();
+      const filesList: GoogleDriveFile[] = (data.files || []).map((file: any) => ({
+        id: file.id,
+        name: file.name || 'Untitled File',
+        mimeType: file.mimeType || 'unknown',
+        size: file.size,
+        modifiedTime: file.modifiedTime ? new Date(file.modifiedTime).toLocaleString() : undefined,
+        webViewLink: file.webViewLink
+      }));
+
+      setDriveFiles(filesList);
+      triggerSyncLog('success', 'Google Drive', `Successfully cached ${filesList.length} sovereign files/folders data.`);
+    } catch (err: any) {
+      console.error('Google Drive fetch error:', err);
+      setDriveError(err.message || 'Error occurred querying Google Drive files');
+      triggerSyncLog('error', 'Google Drive', `API stream failed: ${err.message || err}`);
+    } finally {
+      setLoadingDrive(false);
+    }
+  };
+
+  // Delete Google Drive File (Mandatory User Confirmation)
+  const handleDeleteDriveFile = async (fileId: string, fileName: string) => {
+    if (!token) return;
+    
+    const confirmed = window.confirm(
+      `CRITICAL DESTRUCTIVE ACTION REQUIRED\n\n` +
+      `Are you sure you want to permanently delete the file "${fileName}" from Google Drive?\n` +
+      `This action CANNOT be undone and will permanently remove it from cloud-storage nodes.`
+    );
+    if (!confirmed) return;
+
+    triggerSyncLog('info', 'Google Drive', `Initiating deletion request for: "${fileName}"`);
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Delete request failed with status ${res.status}`);
+      }
+
+      triggerSyncLog('success', 'Google Drive', `File "${fileName}" deleted successfully from your Google Drive.`);
+      alert(`Deleted: "${fileName}" has been permanently purged from your Google Drive.`);
+      
+      // Refresh list
+      fetchGoogleDriveFiles(token, driveSearch);
+    } catch (err: any) {
+      console.error(err);
+      triggerSyncLog('error', 'Google Drive', `Purge path failed: ${err.message || err}`);
+      alert(`Purge path failed: ${err.message}`);
+    }
+  };
+
+  // Upload file to Google Drive (with drag and drop + click support)
+  const handleUploadFile = async (selectedFile: File) => {
+    if (!token) {
+      handleLogin();
+      return;
+    }
+    
+    setUploading(true);
+    setUploadSuccess(null);
+    triggerSyncLog('info', 'Google Drive', `Compiling binary buffers for uploading file: "${selectedFile.name}" (${(selectedFile.size / 1024).toFixed(1)} KB)`);
+
+    try {
+      const metadata = {
+        name: selectedFile.name,
+        mimeType: selectedFile.type || 'application/octet-stream'
+      };
+
+      const boundary = 'KylrixBoundaryCryptoTransfer';
+      const delimiter = `\r\n--${boundary}\r\n`;
+      const close_delim = `\r\n--${boundary}--`;
+
+      const reader = new FileReader();
+      
+      const fileUploadPromise = new Promise((resolve, reject) => {
+        reader.readAsArrayBuffer(selectedFile);
+        reader.onload = async () => {
+          try {
+            const base64Data = btoa(
+              new Uint8Array(reader.result as ArrayBuffer)
+                .reduce((data, byte) => data + String.fromCharCode(byte), '')
+            );
+            
+            const multipartRequestBody =
+              delimiter +
+              'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+              JSON.stringify(metadata) +
+              delimiter +
+              `Content-Type: ${metadata.mimeType}\r\n` +
+              'Content-Transfer-Encoding: base64\r\n\r\n' +
+              base64Data +
+              close_delim;
+
+            const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': `multipart/related; boundary=${boundary}`
+              },
+              body: multipartRequestBody
+            });
+
+            if (!res.ok) {
+              throw new Error(`Upload POST rejected: Status ${res.status}`);
+            }
+
+            const responseData = await res.json();
+            resolve(responseData);
+          } catch (e) {
+            reject(e);
+          }
+        };
+        reader.onerror = () => reject(new Error('Local file reader error'));
+      });
+
+      const responseData: any = await fileUploadPromise;
+
+      setUploadSuccess(`File "${selectedFile.name}" successfully vaulted to Google Drive!`);
+      triggerSyncLog('success', 'Google Drive', `Secure transport bound. Uploaded file "${selectedFile.name}" (ID: ${responseData.id}).`);
+      
+      // Refresh lists
+      fetchGoogleDriveFiles(token, driveSearch);
+      setUploadFile(null);
+    } catch (err: any) {
+      console.error(err);
+      triggerSyncLog('error', 'Google Drive', `File transmission blocked: ${err.message || err}`);
+      alert(`File upload failed: ${err.message}`);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -595,6 +778,9 @@ export const GoogleIntegrationDashboard: React.FC = () => {
           } else if (nextProgress === 80) {
             triggerSyncLog('info', 'System', 'Revising Zero-Knowledge checksum signatures...');
             setActiveSyncStep('Verifying SHA-256 parity');
+            if (token && services.find(s => s.key === 'drive')?.syncActive) {
+              fetchGoogleDriveFiles(token);
+            }
           } else if (nextProgress === 96) {
             triggerSyncLog('success', 'System', 'Encryption parameters validated. Writable caches closed.');
             setActiveSyncStep('Finalizing indices');
@@ -619,6 +805,9 @@ export const GoogleIntegrationDashboard: React.FC = () => {
           if (s.key === 'calendar' && token) {
             fetchCalendarEvents(token);
           }
+          if (s.key === 'drive' && token) {
+            fetchGoogleDriveFiles(token);
+          }
         } else {
           triggerSyncLog('warn', s.name, `Pipeline deactivated.`);
         }
@@ -629,7 +818,7 @@ export const GoogleIntegrationDashboard: React.FC = () => {
   };
 
   const handleCardClick = (service: GoogleService) => {
-    if (!currentUser && (service.key === 'calendar' || service.key === 'keep' || service.key === 'tasks')) {
+    if (!currentUser && (service.key === 'calendar' || service.key === 'keep' || service.key === 'tasks' || service.key === 'docs' || service.key === 'drive')) {
       handleLogin();
       return;
     }
@@ -1399,6 +1588,285 @@ export const GoogleIntegrationDashboard: React.FC = () => {
               </Box>
             </Box>
 
+          </Box>
+        </Box>
+      )}
+
+      {/* Real-time Integrated Google Drive Vault & Storage Panel */}
+      {token && services.find(s => s.key === 'drive')?.connected && (
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" sx={{ color: '#FFFFFF', mb: 2, fontWeight: 700, fontFamily: '"Space Grotesk", sans-serif', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <FolderLock size={18} style={{ color: '#10B981' }} /> Sovereign Google Drive Vault (Integrated Storage)
+          </Typography>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
+            
+            {/* Left Column: List and Select Files, Search and Delete */}
+            <Box sx={{ p: 3, bgcolor: '#161412', borderRadius: '24px', border: '1px solid #1D1C1B', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box>
+                  <Typography sx={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, fontFamily: '"Space Grotesk"' }}>
+                    Vault Storage Explorer
+                  </Typography>
+                  <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"' }}>
+                    Indexed files and directories on Google Drive
+                  </Typography>
+                </Box>
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  onClick={() => fetchGoogleDriveFiles(token, driveSearch)} 
+                  disabled={loadingDrive}
+                  startIcon={loadingDrive ? <CircularProgress size={12} sx={{ color: '#10B981' }} /> : <RefreshCw size={12} />}
+                  sx={{ 
+                    borderColor: '#34322F', 
+                    color: '#E5E0DA', 
+                    fontSize: '11px', 
+                    textTransform: 'none',
+                    '&:hover': { borderColor: '#10B981', bgcolor: '#0A0908' }
+                  }}
+                >
+                  Refresh Index
+                </Button>
+              </Box>
+
+              {driveError && (
+                <Alert 
+                  severity="error" 
+                  sx={{ 
+                    bgcolor: '#2C1A1A', 
+                    color: '#FFAAAA', 
+                    border: '1px solid #3A1A1A',
+                    borderRadius: '12px',
+                    fontSize: '12.5px',
+                  }}
+                >
+                  {driveError}
+                </Alert>
+              )}
+
+              {/* Live Search Drive Filter */}
+              <Box sx={{ display: 'flex', gap: 1, p: 1, bgcolor: '#0A0908', borderRadius: '12px', border: '1px solid #1D1C1B', alignItems: 'center' }}>
+                <Search size={14} style={{ color: '#9B9691', marginLeft: 6 }} />
+                <input 
+                  type="text"
+                  value={driveSearch}
+                  onChange={(e) => {
+                    setDriveSearch(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      fetchGoogleDriveFiles(token, driveSearch);
+                    }
+                  }}
+                  placeholder="Press enter to search files by name..."
+                  style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    color: '#FFFFFF',
+                    fontSize: '12.5px',
+                    fontFamily: '"JetBrains Mono"',
+                    padding: '4px 8px'
+                  }}
+                />
+                <Button
+                  size="small"
+                  onClick={() => fetchGoogleDriveFiles(token, driveSearch)}
+                  sx={{ fontSize: '11px', textTransform: 'none', color: '#10B981', fontWeight: 700 }}
+                >
+                  Search
+                </Button>
+              </Box>
+
+              {loadingDrive ? (
+                <Box sx={{ display: 'flex', gap: 1.5, py: 4, justifyContent: 'center', alignItems: 'center' }}>
+                  <CircularProgress size={18} sx={{ color: '#10B981' }} />
+                  <Typography sx={{ color: '#9B9691', fontSize: '13px', fontFamily: '"JetBrains Mono"' }}>Scanning drive storage...</Typography>
+                </Box>
+              ) : driveFiles.length === 0 ? (
+                <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed #1D1C1B', borderRadius: '16px', bgcolor: '#0A0908' }}>
+                  <Typography sx={{ color: '#9B9691', fontSize: '13px', mb: 1.5 }}>No files matches returned.</Typography>
+                  <Button variant="outlined" size="small" onClick={() => { setDriveSearch(''); fetchGoogleDriveFiles(token, ''); }} sx={{ color: '#10B981', borderColor: '#34322F', textTransform: 'none' }}>
+                    Reset Filters
+                  </Button>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, maxHeight: '350px', overflowY: 'auto', pr: 0.5 }}>
+                  {driveFiles.map((file) => {
+                    const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+                    return (
+                      <Box 
+                        key={file.id}
+                        sx={{
+                          p: 1.8,
+                          bgcolor: '#0A0908',
+                          borderRadius: '16px',
+                          border: '1px solid #1D1C1B',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          transition: 'all 0.2s',
+                          '&:hover': { borderColor: '#10B981', transform: 'translateX(2px)' }
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          {isFolder ? <Folder size={18} style={{ color: '#F59E0B' }} /> : <File size={18} style={{ color: '#10B981' }} />}
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography sx={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {file.name}
+                            </Typography>
+                            <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', mt: 0.5 }}>
+                              {isFolder ? 'Folder' : file.size ? `${(parseInt(file.size) / 1024).toFixed(0)} KB` : 'Dynamic size'} • {file.modifiedTime || 'Unknown date'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          {file.webViewLink && (
+                            <Button
+                              variant="text"
+                              size="small"
+                              onClick={() => window.open(file.webViewLink, '_blank')}
+                              sx={{ color: '#E5E0DA', minWidth: 'auto', p: 1 }}
+                              title="View file on Google Drive"
+                            >
+                              <Eye size={14} />
+                            </Button>
+                          )}
+                          <Button
+                            variant="text"
+                            size="small"
+                            onClick={() => handleDeleteDriveFile(file.id, file.name)}
+                            sx={{ color: '#EF4444', minWidth: 'auto', p: 1 }}
+                            title="Permanently Delete File"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+            </Box>
+
+            {/* Right Column: Upload Files, Drag and Drop, Click to Choice file */}
+            <Box sx={{ p: 3, bgcolor: '#161412', borderRadius: '24px', border: '1px solid #1D1C1B', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box>
+                <Typography sx={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, fontFamily: '"Space Grotesk"' }}>
+                  Sovereign Binary Vault Upload
+                </Typography>
+                <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"' }}>
+                  Directly stream local files to Google Drive in full compliance with the sovereign transport layout
+                </Typography>
+              </Box>
+
+              {uploadSuccess && (
+                <Alert severity="success" sx={{ bgcolor: '#1A2C1A', color: '#AAFFAA', border: '1px solid #1A3A1A' }} onClose={() => setUploadSuccess(null)}>
+                  {uploadSuccess}
+                </Alert>
+              )}
+
+              {/* Drag and Drop Zone Container */}
+              <Box 
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(true);
+                }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(false);
+                  const files = e.dataTransfer.files;
+                  if (files && files.length > 0) {
+                    setUploadFile(files[0]);
+                    setUploadSuccess(null);
+                  }
+                }}
+                onClick={() => {
+                  document.getElementById('drive-file-uploader')?.click();
+                }}
+                sx={{
+                  border: '2px dashed',
+                  borderColor: isDragOver ? '#10B981' : '#34322F',
+                  borderRadius: '20px',
+                  p: 4,
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  bgcolor: isDragOver ? '#0A2A1A' : '#0A0908',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  minHeight: '160px',
+                  justifyContent: 'center',
+                  '&:hover': { borderColor: '#10B981', bgcolor: '#0D1A14' }
+                }}
+              >
+                <input 
+                  type="file"
+                  id="drive-file-uploader"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (files && files.length > 0) {
+                      setUploadFile(files[0]);
+                      setUploadSuccess(null);
+                    }
+                  }}
+                />
+                <Upload size={24} style={{ color: isDragOver ? '#10B981' : '#E5E0DA' }} />
+                <Box>
+                  <Typography sx={{ color: '#FFFFFF', fontSize: '13.5px', fontWeight: 600 }}>
+                    {uploadFile ? uploadFile.name : 'Drag & drop a file here, or click to browse'}
+                  </Typography>
+                  <Typography sx={{ color: '#9B9691', fontSize: '11px', mt: 0.5, fontFamily: '"JetBrains Mono"' }}>
+                    {uploadFile ? `${(uploadFile.size / 1024).toFixed(1)} KB` : 'Supports standard images, documents, audio binary payloads'}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {uploadFile && (
+                <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={() => handleUploadFile(uploadFile)}
+                    disabled={uploading}
+                    startIcon={uploading ? <CircularProgress size={14} sx={{ color: '#0A0908' }} /> : <Upload size={14} />}
+                    sx={{
+                      bgcolor: '#10B981',
+                      color: '#0A0908',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      borderRadius: '12px',
+                      py: 1.2,
+                      '&:hover': { bgcolor: '#059669' }
+                    }}
+                  >
+                    {uploading ? 'Vaulting File...' : `Upload "${uploadFile.name}"`}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => setUploadFile(null)}
+                    disabled={uploading}
+                    sx={{
+                      borderColor: '#34322F',
+                      color: '#EF4444',
+                      textTransform: 'none',
+                      borderRadius: '12px',
+                      px: 2,
+                      '&:hover': { borderColor: '#EF4444', bgcolor: '#1A0A0A' }
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </Box>
+              )}
+            </Box>
           </Box>
         </Box>
       )}

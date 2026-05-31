@@ -1,6 +1,6 @@
 {
   "name": "Kylrix Google Integration",
-  "description": "Sovereign Google integration dashboard and migration bridge for the Kylrix ecosystem, allowing secure and private data imports into sovereign equivalents.",
+  "description": "Sovereign Google and GitHub integration dashboard and migration bridge for the Kylrix ecosystem, allowing secure and private data imports into sovereign equivalents.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

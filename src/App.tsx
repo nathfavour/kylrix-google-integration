@@ -35,6 +35,7 @@ import { kylrixTheme } from './theme';
 import Logo from './components/Logo';
 import { FocusDrawer } from './components/FocusDrawer';
 import { GoogleIntegrationDashboard } from './components/GoogleIntegrationDashboard';
+import { GitHubIntegrationDashboard } from './components/GitHubIntegrationDashboard';
 
 type ActivePage = 'note' | 'flow' | 'vault' | 'connect' | 'settings';
 
@@ -43,6 +44,9 @@ export default function App() {
   const [activePage, setActivePage] = useState<ActivePage>('settings');
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
   const [settingsTab, setSettingsTab] = useState<number>(2); // Default to Google pipeline tab
+  
+  // GitHub task transfer state
+  const [githubTaskPayload, setGithubTaskPayload] = useState<{ id: string; task: string; priority: string } | null>(null);
 
   // Simulated active drafting stats for Note & Flow
   const [activeNotes, setActiveNotes] = useState([
@@ -59,6 +63,16 @@ export default function App() {
   const getAppFromPage = (page: ActivePage): any => {
     if (page === 'settings') return 'root';
     return page;
+  };
+
+  const handlePortTaskToGitHub = (task: typeof activeTasks[0]) => {
+    setGithubTaskPayload({
+      id: task.id,
+      task: task.task,
+      priority: task.priority
+    });
+    setActivePage('settings');
+    setSettingsTab(3); // GitHub integration settingTab
   };
 
   return (
@@ -588,7 +602,27 @@ export default function App() {
                                 <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#FFFFFF', mb: 1 }}>{t.task}</Typography>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <Chip label={t.priority} size="small" sx={{ fontSize: '9px', bgcolor: t.priority === 'CRITICAL' ? '#EF4444' : '#1C1A18', color: '#FFFFFF', height: '18px', fontWeight: 700 }} />
+                                </Box>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5, pt: 1, borderTop: '1px solid #1C1A18' }}>
                                   <Typography sx={{ fontSize: '11px', color: '#9B9691', fontFamily: '"JetBrains Mono"' }}>{t.status}</Typography>
+                                  <Button
+                                    size="small"
+                                    onClick={() => handlePortTaskToGitHub(t)}
+                                    sx={{ 
+                                      color: '#A855F7', 
+                                      fontSize: '11px', 
+                                      fontWeight: 700, 
+                                      textTransform: 'none',
+                                      p: 0,
+                                      minWidth: 0,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      '&:hover': { color: '#B975FF', bgcolor: 'transparent' }
+                                    }}
+                                  >
+                                    Meld to GitHub <ArrowRight size={10} />
+                                  </Button>
                                 </Box>
                               </Box>
                             ))}
@@ -793,6 +827,25 @@ export default function App() {
                             >
                               Google Suite (Conduit)
                             </Button>
+                            
+                            <Button
+                              onClick={() => setSettingsTab(3)}
+                              sx={{
+                                justifyContent: 'flex-start',
+                                px: 1.5,
+                                py: 1.2,
+                                borderRadius: '10px',
+                                color: settingsTab === 3 ? '#A855F7' : '#9B9691',
+                                bgcolor: settingsTab === 3 ? '#0A0908' : 'transparent',
+                                border: settingsTab === 3 ? '1px solid #1D1C1B' : '1px solid transparent',
+                                textTransform: 'none',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                '&:hover': { bgcolor: '#0A0908', color: '#A855F7' }
+                              }}
+                            >
+                              GitHub Bridge (Conduit)
+                            </Button>
                           </Box>
                         </Paper>
                       </Box>
@@ -863,6 +916,21 @@ export default function App() {
                             >
                               {/* Renders exactly inside the Settings router viewport natively! */}
                               <GoogleIntegrationDashboard />
+                            </motion.div>
+                          )}
+
+                          {/* Render Native GitHub Dashboard view directly `/settings/integrations/github` */}
+                          {settingsTab === 3 && (
+                            <motion.div
+                              key="tab-github"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                            >
+                              <GitHubIntegrationDashboard 
+                                prepopulatedTask={githubTaskPayload} 
+                                onClearPrepopulatedTask={() => setGithubTaskPayload(null)}
+                              />
                             </motion.div>
                           )}
 
