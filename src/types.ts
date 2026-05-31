@@ -1,6 +1,6 @@
 export type KylrixApp = 'root' | 'accounts' | 'kylrix' | 'vault' | 'flow' | 'note' | 'connect';
 
-export type GoogleServiceKey = 'keep' | 'tasks' | 'calendar' | 'drive' | 'gmail' | 'docs';
+export type GoogleServiceKey = 'keep' | 'tasks' | 'calendar' | 'drive' | 'gmail' | 'docs' | 'sheets';
 
 export interface GoogleService {
   key: GoogleServiceKey;
@@ -157,5 +157,29 @@ export interface GooglePickerFile {
   description?: string;
   sizeBytes?: number;
 }
+
+export interface SheetsMapping {
+  flowBoard: string;
+  autoSync: boolean;
+}
+
+export interface GoogleSpreadsheet {
+  id: string;
+  title: string;
+  url: string;
+  sheets: {
+    sheetId: number;
+    title: string;
+    index: number;
+  }[];
+  lastModified?: string;
+}
+
+export interface GoogleSheetData {
+  spreadsheetId: string;
+  sheetName: string;
+  values: string[][];
+}
+
 
 
