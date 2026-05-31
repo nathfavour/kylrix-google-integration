@@ -14,6 +14,7 @@ provider.addScope('https://www.googleapis.com/auth/drive');
 provider.addScope('https://www.googleapis.com/auth/tasks');
 provider.addScope('https://www.googleapis.com/auth/gmail');
 provider.addScope('https://www.googleapis.com/auth/sheets');
+provider.addScope('https://www.googleapis.com/auth/meetings.space.created');
 
 // Flag to indicate if we are in the middle of a sign-in flow.
 let isSigningIn = false;

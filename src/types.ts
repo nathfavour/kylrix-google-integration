@@ -1,6 +1,6 @@
 export type KylrixApp = 'root' | 'accounts' | 'kylrix' | 'vault' | 'flow' | 'note' | 'connect';
 
-export type GoogleServiceKey = 'keep' | 'tasks' | 'calendar' | 'drive' | 'gmail' | 'docs' | 'sheets';
+export type GoogleServiceKey = 'keep' | 'tasks' | 'calendar' | 'drive' | 'gmail' | 'docs' | 'sheets' | 'meet';
 
 export interface GoogleService {
   key: GoogleServiceKey;
@@ -179,6 +179,20 @@ export interface GoogleSheetData {
   spreadsheetId: string;
   sheetName: string;
   values: string[][];
+}
+
+export interface GoogleMeetSpace {
+  name: string;
+  meetingUri: string;
+  meetingCode: string;
+  config?: {
+    accessType?: string;
+  };
+}
+
+export interface MeetMapping {
+  autoCreateOnEvent: boolean;
+  defaultAccessType: 'OPEN' | 'TRUSTED' | 'RESTRICTED';
 }
 
 

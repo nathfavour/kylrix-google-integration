@@ -30,7 +30,8 @@ import {
   X,
   Database,
   Terminal,
-  ArrowRight
+  ArrowRight,
+  Video
 } from 'lucide-react';
 import { GoogleService, GoogleServiceKey } from '../types';
 import Logo from './Logo';
@@ -86,6 +87,11 @@ export const MappingModal: React.FC<MappingModalProps> = ({
     importAsMarkdown: true,
   });
 
+  const [meetConfig, setMeetConfig] = useState({
+    autoCreateOnEvent: true,
+    defaultAccessType: 'TRUSTED',
+  });
+
   useEffect(() => {
     // Reset or load initial mocks depending on the selected service
   }, [service]);
@@ -98,6 +104,7 @@ export const MappingModal: React.FC<MappingModalProps> = ({
     else if (service.key === 'drive') activeConfig = driveConfig;
     else if (service.key === 'gmail') activeConfig = gmailConfig;
     else if (service.key === 'docs') activeConfig = docsConfig;
+    else if (service.key === 'meet') activeConfig = meetConfig;
 
     onSave(service.key, activeConfig);
     onClose();
@@ -579,6 +586,63 @@ export const MappingModal: React.FC<MappingModalProps> = ({
                 sx={{
                   '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
                     backgroundColor: '#3B82F6 !important'
+                  }
+                }}
+              />
+            </Box>
+          </Stack>
+        );
+
+      case 'meet':
+        return (
+          <Stack spacing={3}>
+            <Alert 
+              severity="info" 
+              sx={{ 
+                bgcolor: '#1C1A18', 
+                border: '1px solid #34322F', 
+                color: '#FFFFFF',
+                borderRadius: '12px',
+                '& .MuiAlert-icon': { color: '#00AC47' }
+              }}
+              icon={<Video size={20} />}
+            >
+              Google Meet API enables instantiating and managing virtual call space loops across connected team networks. Meet coordinates will persist in Connect channels.
+            </Alert>
+
+            <FormControl fullWidth size="small">
+              <Typography sx={{ color: '#9B9691', fontSize: '12px', fontWeight: 600, mb: 1, textTransform: 'uppercase' }}>
+                Default Space Access Type
+              </Typography>
+              <Select
+                value={meetConfig.defaultAccessType}
+                onChange={(e) => setMeetConfig({ ...meetConfig, defaultAccessType: e.target.value as 'OPEN' | 'TRUSTED' | 'RESTRICTED' })}
+                sx={{
+                  bgcolor: '#0A0908',
+                  borderRadius: '12px',
+                  border: '1px solid #1C1A18',
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                  '&:hover': { border: '1px solid #34322F' },
+                  '&.Mui-focused': { border: '1px solid #00AC47' },
+                }}
+              >
+                <MenuItem value="OPEN">Open (Anyone with the link can join directly)</MenuItem>
+                <MenuItem value="TRUSTED">Trusted (Users from organization or guests can join)</MenuItem>
+                <MenuItem value="RESTRICTED">Restricted (Only direct invitees can join)</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, bgcolor: '#161412', borderRadius: '12px', border: '1px solid #1C1A18' }}>
+              <Box>
+                <Typography sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}>Auto-Create on Calendar Event</Typography>
+                <Typography sx={{ color: '#9B9691', fontSize: '12px' }}>Instantly link Meet rooms when creating calendars</Typography>
+              </Box>
+              <Switch 
+                checked={meetConfig.autoCreateOnEvent} 
+                onChange={(e) => setMeetConfig({ ...meetConfig, autoCreateOnEvent: e.target.checked })}
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    backgroundColor: '#00AC47 !important'
                   }
                 }}
               />
