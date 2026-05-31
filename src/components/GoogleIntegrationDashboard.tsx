@@ -42,12 +42,14 @@ import {
   File,
   ListTodo,
   CheckSquare,
-  Plus
+  Plus,
+  FolderOpen
 } from 'lucide-react';
-import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent, GoogleDoc, GoogleDriveFile, GoogleTaskList, GoogleTask, GoogleKeepNote, GoogleGmailMessage, GoogleGmailLabel } from '../types';
+import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent, GoogleDoc, GoogleDriveFile, GoogleTaskList, GoogleTask, GoogleKeepNote, GoogleGmailMessage, GoogleGmailLabel, GooglePickerFile } from '../types';
 import { MappingModal } from './MappingModal';
 import Logo from './Logo';
 import { initAuth, googleSignIn, logout, getAccessToken } from '../googleAuth';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 export const GoogleIntegrationDashboard: React.FC = () => {
   // Initial states representing the sovereign Google import conduits
@@ -201,6 +203,10 @@ export const GoogleIntegrationDashboard: React.FC = () => {
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+  // Live Google Picker State
+  const [selectedPickerFile, setSelectedPickerFile] = useState<GooglePickerFile | null>(null);
+  const [pickerLoading, setPickerLoading] = useState<boolean>(false);
 
   // Global states for simulated sync orchestration
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -427,6 +433,116 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       triggerSyncLog('error', 'Google Drive', `API stream failed: ${err.message || err}`);
     } finally {
       setLoadingDrive(false);
+    }
+  };
+
+  // Load Google API Loader (gapi) and show Picker
+  const loadGapiAndShowPicker = (accessToken: string) => {
+    setPickerLoading(true);
+    triggerSyncLog('info', 'Google Picker', 'Bootstrapping Google Picker libraries from origin...');
+    
+    const runPickerBuild = () => {
+      const gapi = (window as any).gapi;
+      if (!gapi) {
+        setPickerLoading(false);
+        triggerSyncLog('error', 'Google Picker', 'Global gapi namespace undefined. Bootstrap failed.');
+        return;
+      }
+      gapi.load('picker', {
+        callback: () => {
+          triggerSyncLog('success', 'Google Picker', 'Picker sub-module linked dynamically. Ready to construct.');
+          createPicker(accessToken);
+        },
+        onerror: () => {
+          setPickerLoading(false);
+          triggerSyncLog('error', 'Google Picker', 'Failed to asynchronously load Picker widget script.');
+        }
+      });
+    };
+
+    if (!(window as any).gapi) {
+      const script = document.createElement('script');
+      script.src = 'https://apis.google.com/js/api.js';
+      script.type = 'text/javascript';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        runPickerBuild();
+      };
+      script.onerror = () => {
+        setPickerLoading(false);
+        triggerSyncLog('error', 'Google Picker', 'Orchestration script link failed to mount.');
+      };
+      document.body.appendChild(script);
+    } else {
+      runPickerBuild();
+    }
+  };
+
+  // Build and display the Google Picker
+  const createPicker = (accessToken: string) => {
+    const google = (window as any).google;
+    if (!google || !google.picker) {
+      setPickerLoading(false);
+      triggerSyncLog('error', 'Google Picker', 'Google API picker object namespace unavailable.');
+      return;
+    }
+
+    try {
+      const developerKey = firebaseConfig.apiKey || 'AIzaSyBVbxshvkhlG_uZ6jOMVo5Gx-6LAwSEjR8';
+      const appId = firebaseConfig.projectId || 'gen-lang-client-0514307054';
+
+      const docsView = new google.picker.DocsView()
+        .setIncludeFolders(true)
+        .setSelectFolderEnabled(true);
+
+      const uploadView = new google.picker.DocsUploadView();
+
+      const picker = new google.picker.PickerBuilder()
+        .addView(docsView)
+        .addView(uploadView)
+        .setOAuthToken(accessToken)
+        .setDeveloperKey(developerKey)
+        .setAppId(appId)
+        .setCallback((data: any) => {
+          if (data.action === google.picker.Action.PICKED) {
+            const doc = data.docs[0];
+            const fileInfo: GooglePickerFile = {
+              id: doc.id,
+              name: doc.name || 'Untitled File',
+              url: doc.url || '',
+              mimeType: doc.mimeType || 'unknown',
+              description: doc.description || '',
+              sizeBytes: doc.sizeBytes
+            };
+            setSelectedPickerFile(fileInfo);
+            triggerSyncLog('success', 'Google Picker', `Acquired sovereign descriptor via Picker: "${fileInfo.name}" (ID: ${fileInfo.id})`);
+            
+            // Append file to Drive list if desired so user can view it in the general stream too
+            setDriveFiles(prev => {
+              if (prev.some(f => f.id === fileInfo.id)) return prev;
+              const newFile: GoogleDriveFile = {
+                id: fileInfo.id,
+                name: fileInfo.name,
+                mimeType: fileInfo.mimeType,
+                size: fileInfo.sizeBytes ? String(fileInfo.sizeBytes) : undefined,
+                modifiedTime: new Date().toLocaleString(),
+                webViewLink: fileInfo.url
+              };
+              return [newFile, ...prev];
+            });
+          } else if (data.action === google.picker.Action.CANCEL) {
+            triggerSyncLog('warn', 'Google Picker', 'Selection stream closed by picker operator.');
+          }
+        })
+        .build();
+
+      picker.setVisible(true);
+    } catch (err: any) {
+      console.error('Picker initialization exception:', err);
+      triggerSyncLog('error', 'Google Picker', `Setup rejected inside client scope: ${err.message || err}`);
+    } finally {
+      setPickerLoading(false);
     }
   };
 
@@ -3476,6 +3592,83 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                   </Button>
                 </Box>
               )}
+
+              <Divider sx={{ borderColor: '#1C1A18', my: 2 }} />
+
+              {/* Google Picker Integration */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <Box>
+                  <Typography sx={{ color: '#E5E0DA', fontSize: '13px', fontWeight: 700, fontFamily: '"Space Grotesk"', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <FolderOpen size={16} style={{ color: '#10B981' }} /> Google Picker Bridge Conduit
+                  </Typography>
+                  <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', mt: 0.5 }}>
+                    Open the secure external chooser overlay to authorize and ingest Drive documents.
+                  </Typography>
+                </Box>
+
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  onClick={() => loadGapiAndShowPicker(token!)}
+                  disabled={pickerLoading}
+                  startIcon={pickerLoading ? <CircularProgress size={14} sx={{ color: '#10B981' }} /> : <FolderOpen size={14} />}
+                  sx={{
+                    borderColor: '#2C1D0F',
+                    color: '#10B981',
+                    fontWeight: 800,
+                    textTransform: 'none',
+                    borderRadius: '12px',
+                    py: 1.2,
+                    fontFamily: '"Space Grotesk"',
+                    '&:hover': { borderColor: '#10B981', bgcolor: '#0D1A14' }
+                  }}
+                >
+                  {pickerLoading ? 'Initializing Picker API...' : 'Open Google Picker Overlay'}
+                </Button>
+
+                {selectedPickerFile && (
+                  <Box sx={{ p: 2, bgcolor: '#0A0908', border: '1px solid #1D1C1B', borderRadius: '16px', mt: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography sx={{ color: '#10B981', fontSize: '11px', fontWeight: 800, fontFamily: '"Space Grotesk"', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          ✓ SELECTED PICKER NODE
+                        </Typography>
+                        <Typography sx={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 600, mt: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selectedPickerFile.name}
+                        </Typography>
+                        <Typography sx={{ color: '#9B9691', fontSize: '10px', fontFamily: '"JetBrains Mono"', mt: 0.3 }}>
+                          ID: {selectedPickerFile.id}
+                        </Typography>
+                        {selectedPickerFile.sizeBytes !== undefined && (
+                          <Typography sx={{ color: '#9B9691', fontSize: '10px', fontFamily: '"JetBrains Mono"' }}>
+                            Size: {(selectedPickerFile.sizeBytes / 1024).toFixed(1)} KB
+                          </Typography>
+                        )}
+                      </Box>
+                      <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => setSelectedPickerFile(null)}
+                        sx={{ color: '#EF4444', minWidth: 'auto', p: 0.5, fontSize: '11px', textTransform: 'none', fontFamily: '"JetBrains Mono"' }}
+                      >
+                        Clear
+                      </Button>
+                    </Box>
+
+                    {selectedPickerFile.url && (
+                      <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => window.open(selectedPickerFile.url, '_blank')}
+                        startIcon={<Eye size={12} />}
+                        sx={{ color: '#E5E0DA', textTransform: 'none', alignSelf: 'flex-start', fontSize: '11px', fontFamily: '"Space Grotesk"', p: 0 }}
+                      >
+                        View Selector Resource
+                      </Button>
+                    )}
+                  </Box>
+                )}
+              </Box>
             </Box>
           </Box>
         </Box>

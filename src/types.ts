@@ -149,4 +149,13 @@ export interface GoogleGmailLabel {
   type?: string;
 }
 
+export interface GooglePickerFile {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  description?: string;
+  sizeBytes?: number;
+}
+
 
