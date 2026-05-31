@@ -119,4 +119,16 @@ export interface GoogleTask {
   updated?: string;
 }
 
+export interface GoogleKeepNote {
+  name: string; // "notes/{noteId}"
+  title?: string;
+  body?: {
+    text?: {
+      text?: string;
+    };
+  };
+  createTime?: string;
+  updateTime?: string;
+}
+
 
