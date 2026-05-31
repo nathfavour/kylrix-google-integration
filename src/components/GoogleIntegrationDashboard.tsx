@@ -39,9 +39,12 @@ import {
   Download,
   Folder,
   Eye,
-  File
+  File,
+  ListTodo,
+  CheckSquare,
+  Plus
 } from 'lucide-react';
-import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent, GoogleDoc, GoogleDriveFile } from '../types';
+import { GoogleService, GoogleServiceKey, SyncLog, CalendarEvent, GoogleDoc, GoogleDriveFile, GoogleTaskList, GoogleTask } from '../types';
 import { MappingModal } from './MappingModal';
 import Logo from './Logo';
 import { initAuth, googleSignIn, logout, getAccessToken } from '../googleAuth';
@@ -148,6 +151,18 @@ export const GoogleIntegrationDashboard: React.FC = () => {
   const [exportLoad, setExportLoad] = useState<boolean>(false);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
 
+  // Live Google Tasks State
+  const [taskLists, setTaskLists] = useState<GoogleTaskList[]>([]);
+  const [selectedTaskListId, setSelectedTaskListId] = useState<string>('@default');
+  const [googleTasks, setGoogleTasks] = useState<GoogleTask[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState<boolean>(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
+  
+  // Create task states
+  const [newTaskTitle, setNewTaskTitle] = useState<string>('');
+  const [newTaskNotes, setNewTaskNotes] = useState<string>('');
+  const [creatingTask, setCreatingTask] = useState<boolean>(false);
+
   // Live Google Drive State
   const [driveFiles, setDriveFiles] = useState<GoogleDriveFile[]>([]);
   const [loadingDrive, setLoadingDrive] = useState<boolean>(false);
@@ -201,14 +216,15 @@ export const GoogleIntegrationDashboard: React.FC = () => {
         // Auto mark Google services as connected since auth succeeded
         setServices(current => current.map(s => {
           if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks' || s.key === 'docs' || s.key === 'drive') {
-            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs' || s.key === 'drive') ? true : s.syncActive };
+            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs' || s.key === 'drive' || s.key === 'tasks') ? true : s.syncActive };
           }
           return s;
         }));
 
-        // Fetch events and drive files if user previously connected
+        // Fetch events, drive files and tasklists if user previously connected
         fetchCalendarEvents(cachedToken);
         fetchGoogleDriveFiles(cachedToken);
+        fetchGoogleTaskLists(cachedToken);
       },
       () => {
         setCurrentUser(null);
@@ -246,14 +262,15 @@ export const GoogleIntegrationDashboard: React.FC = () => {
         
         setServices(current => current.map(s => {
           if (s.key === 'calendar' || s.key === 'keep' || s.key === 'tasks' || s.key === 'docs' || s.key === 'drive') {
-            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs' || s.key === 'drive') ? true : s.syncActive };
+            return { ...s, connected: true, syncActive: (s.key === 'calendar' || s.key === 'docs' || s.key === 'drive' || s.key === 'tasks') ? true : s.syncActive };
           }
           return s;
         }));
 
-        // Fetch initial list of calendar events and drive files
+        // Fetch initial list of calendar events, drive files and tasklists
         await fetchCalendarEvents(result.accessToken);
         await fetchGoogleDriveFiles(result.accessToken);
+        await fetchGoogleTaskLists(result.accessToken);
       }
     } catch (err: any) {
       console.error(err);
@@ -273,6 +290,8 @@ export const GoogleIntegrationDashboard: React.FC = () => {
       setCalendarEvents([]);
       setDriveFiles([]);
       setGoogleDocs([]);
+      setGoogleTasks([]);
+      setTaskLists([]);
       localStorage.removeItem('cached_calendar_events');
       setServices(current => current.map(s => ({ ...s, connected: false, syncActive: false, lastSync: null })));
       triggerSyncLog('warn', 'Auth', 'Google Account disconnected. Active access tokens flushed.');
@@ -721,6 +740,214 @@ export const GoogleIntegrationDashboard: React.FC = () => {
     }
   };
 
+  // Fetch lists of tasks from Google Tasks API
+  const fetchGoogleTaskLists = async (accessToken: string) => {
+    setLoadingTasks(true);
+    setTasksError(null);
+    try {
+      const url = 'https://tasks.googleapis.com/v1/users/@me/lists';
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Task lists fetch failed: Status ${res.status} - ${errText || res.statusText}`);
+      }
+
+      const data = await res.json();
+      const lists: GoogleTaskList[] = (data.items || []).map((item: any) => ({
+        id: item.id,
+        title: item.title || 'Untitled List',
+        updated: item.updated
+      }));
+
+      setTaskLists(lists);
+      triggerSyncLog('success', 'Google Tasks', `Successfully cached ${lists.length} task lists.`);
+
+      // Automatically fetch tasks for the active list (or default list if available)
+      const activeList = lists.find(l => l.id === selectedTaskListId) || lists[0];
+      if (activeList) {
+        setSelectedTaskListId(activeList.id);
+        fetchGoogleTasks(accessToken, activeList.id);
+      } else {
+        fetchGoogleTasks(accessToken, '@default');
+      }
+    } catch (err: any) {
+      console.error('Google Task Lists fetch error:', err);
+      if (err.message.includes('403') || err.message.includes('insufficient_permissions') || err.message.includes('Permission')) {
+        setTasksError('Insufficient authentication scopes or permissions. Try re-signing in with Google Tasks permissions.');
+      } else {
+        setTasksError(err.message || 'Error occurred querying Tasks lists');
+      }
+      triggerSyncLog('error', 'Google Tasks', `API lists query failed: ${err.message || err}`);
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  // Fetch tasks belonging to a specific list
+  const fetchGoogleTasks = async (accessToken: string, listId: string) => {
+    setLoadingTasks(true);
+    setTasksError(null);
+    try {
+      // Endpoint to retrieve active and completed tasks (max 100)
+      const url = `https://tasks.googleapis.com/v1/lists/${listId}/tasks?maxResults=100&showCompleted=true&showHidden=true`;
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Tasks fetch failed: Status ${res.status} - ${errText || res.statusText}`);
+      }
+
+      const data = await res.json();
+      const taskItems: GoogleTask[] = (data.items || []).map((item: any) => ({
+        id: item.id,
+        title: item.title || '(No Title)',
+        notes: item.notes,
+        status: item.status || 'needsAction',
+        due: item.due,
+        updated: item.updated
+      }));
+
+      setGoogleTasks(taskItems);
+      triggerSyncLog('success', 'Google Tasks', `Cached ${taskItems.length} tasks from list.`);
+    } catch (err: any) {
+      console.error('Google Tasks list items error:', err);
+      setTasksError(err.message || 'Error occurred querying tasks from list');
+      triggerSyncLog('error', 'Google Tasks', `API tasks fetch failed: ${err.message || err}`);
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  // Create a new task in the active list
+  const handleCreateGoogleTask = async () => {
+    if (!token) {
+      handleLogin();
+      return;
+    }
+
+    if (!newTaskTitle.trim()) {
+      alert('Task title cannot be empty.');
+      return;
+    }
+
+    setCreatingTask(true);
+    triggerSyncLog('info', 'Google Tasks', `Pushing new task payload to cloud nodes: "${newTaskTitle}"`);
+    try {
+      const url = `https://tasks.googleapis.com/v1/lists/${selectedTaskListId}/tasks`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          title: newTaskTitle,
+          notes: newTaskNotes || undefined
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`Create task failed with status ${res.status}`);
+      }
+
+      const created = await res.json();
+      triggerSyncLog('success', 'Google Tasks', `Created task: "${created.title}" successfully.`);
+      setNewTaskTitle('');
+      setNewTaskNotes('');
+      
+      // Refresh list
+      fetchGoogleTasks(token, selectedTaskListId);
+    } catch (err: any) {
+      console.error(err);
+      triggerSyncLog('error', 'Google Tasks', `Task creation blocked: ${err.message || err}`);
+      alert(`Creation failed: ${err.message}`);
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
+  // Toggle/Update task status (Mark Completed or Needs Action)
+  const handleToggleGoogleTask = async (taskId: string, currentStatus: 'needsAction' | 'completed') => {
+    if (!token) return;
+
+    const nextStatus = currentStatus === 'completed' ? 'needsAction' : 'completed';
+    triggerSyncLog('info', 'Google Tasks', `Patching task status node: Toggle status to ${nextStatus}...`);
+
+    try {
+      const url = `https://tasks.googleapis.com/v1/lists/${selectedTaskListId}/tasks/${taskId}`;
+      
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          id: taskId,
+          status: nextStatus
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`PATCH request failed with status ${res.status}`);
+      }
+
+      triggerSyncLog('success', 'Google Tasks', `Updated task state to "${nextStatus}".`);
+      
+      // Refresh list
+      fetchGoogleTasks(token, selectedTaskListId);
+    } catch (err: any) {
+      console.error(err);
+      triggerSyncLog('error', 'Google Tasks', `State transition failed: ${err.message || err}`);
+      alert(`Update failed: ${err.message}`);
+    }
+  };
+
+  // Delete task permanently
+  const handleDeleteGoogleTask = async (taskId: string, taskTitle: string) => {
+    if (!token) return;
+
+    const confirmed = window.confirm(`Permanently delete task "${taskTitle}" from Google Tasks? This cannot be undone.`);
+    if (!confirmed) return;
+
+    triggerSyncLog('info', 'Google Tasks', `Sending DELETE block request for: "${taskTitle}"`);
+    try {
+      const url = `https://tasks.googleapis.com/v1/lists/${selectedTaskListId}/tasks/${taskId}`;
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Delete task returned status ${res.status}`);
+      }
+
+      triggerSyncLog('success', 'Google Tasks', `Purged task "${taskTitle}" successfully.`);
+      
+      // Refresh list
+      fetchGoogleTasks(token, selectedTaskListId);
+    } catch (err: any) {
+      console.error(err);
+      triggerSyncLog('error', 'Google Tasks', `Delete transaction failed: ${err.message || err}`);
+      alert(`Delete failed: ${err.message}`);
+    }
+  };
+
   // Progress/Loading timeline simulation
   useEffect(() => {
     let timer: any;
@@ -761,6 +988,9 @@ export const GoogleIntegrationDashboard: React.FC = () => {
             triggerSyncLog('success', 'Keep', 'Keep import completed: 18 legacy items written.');
             triggerSyncLog('info', 'Tasks', 'Opening tasks feed stream destination: Kylrix Flow...');
             setActiveSyncStep('Transferring Google Tasks targets');
+            if (token && services.find(s => s.key === 'tasks')?.syncActive) {
+              fetchGoogleTaskLists(token);
+            }
           } else if (nextProgress === 48) {
             triggerSyncLog('success', 'Tasks', 'Tasks processed: 12 backlog cards updated.');
             triggerSyncLog('info', 'Calendar', 'Checking upcoming event arrays...');
@@ -807,6 +1037,9 @@ export const GoogleIntegrationDashboard: React.FC = () => {
           }
           if (s.key === 'drive' && token) {
             fetchGoogleDriveFiles(token);
+          }
+          if (s.key === 'tasks' && token) {
+            fetchGoogleTaskLists(token);
           }
         } else {
           triggerSyncLog('warn', s.name, `Pipeline deactivated.`);
@@ -1288,6 +1521,256 @@ export const GoogleIntegrationDashboard: React.FC = () => {
                 </Box>
               </Box>
             ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* Real-time Integrated Google Tasks Feed & Management Panel */}
+      {token && services.find(s => s.key === 'tasks')?.connected && (
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" sx={{ color: '#FFFFFF', mb: 2, fontWeight: 700, fontFamily: '"Space Grotesk", sans-serif', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ListTodo size={18} style={{ color: '#A855F7' }} /> Sovereign Google Tasks Pipeline (Sovereign Board)
+          </Typography>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
+            
+            {/* Left Column: List Selector and Create Form */}
+            <Box sx={{ p: 3, bgcolor: '#161412', borderRadius: '24px', border: '1px solid #1D1C1B', display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <Box>
+                <Typography sx={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, fontFamily: '"Space Grotesk"' }}>
+                  Task Stream Director
+                </Typography>
+                <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"' }}>
+                  Select or generate checklist targets across connected Google Tasks feeds
+                </Typography>
+              </Box>
+
+              {/* Tasks Selector Dropdown & Refresh */}
+              <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+                <select
+                  value={selectedTaskListId}
+                  onChange={(e) => {
+                    const listId = e.target.value;
+                    setSelectedTaskListId(listId);
+                    fetchGoogleTasks(token, listId);
+                  }}
+                  style={{
+                    flex: 1,
+                    background: '#0A0908',
+                    border: '1px solid #1D1C1B',
+                    borderRadius: '12px',
+                    color: '#FFFFFF',
+                    padding: '10px 14px',
+                    fontSize: '13px',
+                    fontFamily: '"JetBrains Mono"',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {taskLists.length === 0 ? (
+                    <option value="@default">Default List</option>
+                  ) : (
+                    taskLists.map((list) => (
+                      <option key={list.id} value={list.id}>
+                        {list.title}
+                      </option>
+                    ))
+                  )}
+                </select>
+
+                <Button
+                  variant="outlined"
+                  onClick={() => fetchGoogleTaskLists(token)}
+                  disabled={loadingTasks}
+                  sx={{
+                    minWidth: 'auto',
+                    p: 1.5,
+                    borderRadius: '12px',
+                    borderColor: '#34322F',
+                    color: '#E5E0DA',
+                    '&:hover': { borderColor: '#A855F7', bgcolor: '#0A0908' }
+                  }}
+                  title="Reload Tasklists"
+                >
+                  <RefreshCw size={14} className={loadingTasks ? 'animate-spin' : ''} />
+                </Button>
+              </Box>
+
+              <Divider sx={{ borderColor: '#1D1C1B' }} />
+
+              {/* Create Task Form */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Typography sx={{ color: '#E5E0DA', fontSize: '12.5px', fontWeight: 700, fontFamily: '"Space Grotesk"' }}>
+                  + Inject Sovereign Task Checkpoint
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  <input
+                    type="text"
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    placeholder="Enter task title (e.g. Verify SHA-256 signatures)..."
+                    style={{
+                      background: '#0A0908',
+                      border: '1px solid #1D1C1B',
+                      borderRadius: '12px',
+                      color: '#FFFFFF',
+                      fontSize: '13px',
+                      fontFamily: '"Space Grotesk"',
+                      padding: '10px 14px',
+                      outline: 'none'
+                    }}
+                  />
+                  <textarea
+                    value={newTaskNotes}
+                    onChange={(e) => setNewTaskNotes(e.target.value)}
+                    placeholder="Provide additional context notes/telemetry details (optional)..."
+                    rows={3}
+                    style={{
+                      background: '#0A0908',
+                      border: '1px solid #1D1C1B',
+                      borderRadius: '12px',
+                      color: '#FFFFFF',
+                      fontSize: '12.5px',
+                      fontFamily: '"JetBrains Mono"',
+                      padding: '10px 14px',
+                      outline: 'none',
+                      resize: 'none'
+                    }}
+                  />
+                  <Button
+                    variant="contained"
+                    disabled={creatingTask || !newTaskTitle.trim()}
+                    onClick={handleCreateGoogleTask}
+                    sx={{
+                      bgcolor: '#A855F7',
+                      color: '#0A0908',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      borderRadius: '12px',
+                      py: 1.2,
+                      fontFamily: '"Space Grotesk"',
+                      '&:hover': { bgcolor: '#9333EA' },
+                      '&.Mui-disabled': { bgcolor: '#1D1C1B', color: '#4D4944' }
+                    }}
+                  >
+                    {creatingTask ? 'Transmitting to Cloud...' : 'Commit Core Task Checkpoint'}
+                  </Button>
+                </Box>
+              </Box>
+            </Box>
+
+            {/* Right Column: List of Google Tasks inside current list */}
+            <Box sx={{ p: 3, bgcolor: '#161412', borderRadius: '24px', border: '1px solid #1D1C1B', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box>
+                  <Typography sx={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, fontFamily: '"Space Grotesk"' }}>
+                    Active Checklist Feed
+                  </Typography>
+                  <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"' }}>
+                    Check checkpoints to complete or permanently dissolve items
+                  </Typography>
+                </Box>
+                <Chip
+                  label={`${googleTasks.filter(t => t.status === 'completed').length}/${googleTasks.length} Done`}
+                  size="small"
+                  sx={{
+                    bgcolor: '#0A0908',
+                    color: '#A855F7',
+                    border: '1px solid #1E1B29',
+                    fontFamily: '"JetBrains Mono"',
+                    fontSize: '10.5px'
+                  }}
+                />
+              </Box>
+
+              {tasksError && (
+                <Alert
+                  severity="error"
+                  sx={{
+                    bgcolor: '#2C1A1A',
+                    color: '#FFAAAA',
+                    border: '1px solid #3A1A1A',
+                    borderRadius: '12px',
+                    fontSize: '12px'
+                  }}
+                >
+                  {tasksError}
+                </Alert>
+              )}
+
+              {loadingTasks ? (
+                <Box sx={{ display: 'flex', gap: 1.5, py: 6, justifyContent: 'center', alignItems: 'center' }}>
+                  <CircularProgress size={18} sx={{ color: '#A855F7' }} />
+                  <Typography sx={{ color: '#9B9691', fontSize: '13px', fontFamily: '"JetBrains Mono"' }}>Fetching list contents...</Typography>
+                </Box>
+              ) : googleTasks.length === 0 ? (
+                <Box sx={{ p: 5, textAlign: 'center', border: '1px dashed #1D1C1B', borderRadius: '16px', bgcolor: '#0A0908' }}>
+                  <CheckSquare size={24} style={{ color: '#4D4944', margin: '0 auto 12px' }} />
+                  <Typography sx={{ color: '#9B9691', fontSize: '13px', mb: 1.5 }}>No checkpoints registered in this tasklist.</Typography>
+                  <Typography sx={{ color: '#4D4944', fontSize: '11px' }}>Create one using the form on the left to initialize.</Typography>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, maxHeight: '380px', overflowY: 'auto', pr: 0.5 }}>
+                  {googleTasks.map((task) => {
+                    const isCompleted = task.status === 'completed';
+                    return (
+                      <Box
+                        key={task.id}
+                        sx={{
+                          p: 1.8,
+                          bgcolor: '#0A0908',
+                          borderRadius: '16px',
+                          border: '1px solid #1D1C1B',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          opacity: isCompleted ? 0.6 : 1,
+                          textDecoration: isCompleted ? 'line-through' : 'none',
+                          transition: 'all 0.2s',
+                          '&:hover': { borderColor: '#A855F7', transform: 'translateX(2px)' }
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                          <Button
+                            variant="text"
+                            onClick={() => handleToggleGoogleTask(task.id, task.status)}
+                            sx={{
+                              p: 0.5,
+                              minWidth: 'auto',
+                              color: isCompleted ? '#A855F7' : '#4D4944',
+                              '&:hover': { color: '#A855F7' }
+                            }}
+                            title={isCompleted ? 'Mark as Needs Action' : 'Mark as Completed'}
+                          >
+                            <CheckSquare size={18} style={{ color: isCompleted ? '#A855F7' : '#4D4944' }} />
+                          </Button>
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography sx={{ color: isCompleted ? '#9B9691' : '#FFFFFF', fontSize: '13px', fontWeight: isCompleted ? 400 : 600 }}>
+                              {task.title}
+                            </Typography>
+                            {task.notes && (
+                              <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {task.notes}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Box>
+                        
+                        <Button
+                          variant="text"
+                          size="small"
+                          onClick={() => handleDeleteGoogleTask(task.id, task.title)}
+                          sx={{ color: '#EF4444', minWidth: 'auto', p: 1 }}
+                          title="Permanently Delete Task"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+            </Box>
           </Box>
         </Box>
       )}

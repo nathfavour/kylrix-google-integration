@@ -104,4 +104,19 @@ export interface GoogleDriveFile {
   webViewLink?: string;
 }
 
+export interface GoogleTaskList {
+  id: string;
+  title: string;
+  updated?: string;
+}
+
+export interface GoogleTask {
+  id: string;
+  title: string;
+  notes?: string;
+  status: 'needsAction' | 'completed';
+  due?: string;
+  updated?: string;
+}
+
 

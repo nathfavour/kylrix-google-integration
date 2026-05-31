@@ -11,6 +11,7 @@ provider.addScope('https://www.googleapis.com/auth/calendar');
 provider.addScope('https://www.googleapis.com/auth/documents');
 provider.addScope('https://www.googleapis.com/auth/docs');
 provider.addScope('https://www.googleapis.com/auth/drive');
+provider.addScope('https://www.googleapis.com/auth/tasks');
 
 // Flag to indicate if we are in the middle of a sign-in flow.
 let isSigningIn = false;
