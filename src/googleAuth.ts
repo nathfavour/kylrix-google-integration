@@ -6,15 +6,18 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
-// Request Calendar and Google Docs scopes
+// Request Calendar, Docs, Drive, Tasks, Sheets, Meet, Slides, Forms, Gmail, and Keep scopes
 provider.addScope('https://www.googleapis.com/auth/calendar');
 provider.addScope('https://www.googleapis.com/auth/documents');
-provider.addScope('https://www.googleapis.com/auth/docs');
 provider.addScope('https://www.googleapis.com/auth/drive');
 provider.addScope('https://www.googleapis.com/auth/tasks');
-provider.addScope('https://www.googleapis.com/auth/gmail');
-provider.addScope('https://www.googleapis.com/auth/sheets');
+provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 provider.addScope('https://www.googleapis.com/auth/meetings.space.created');
+provider.addScope('https://www.googleapis.com/auth/presentations');
+provider.addScope('https://www.googleapis.com/auth/forms.body');
+provider.addScope('https://www.googleapis.com/auth/forms.responses.readonly');
+provider.addScope('https://www.googleapis.com/auth/gmail');
+provider.addScope('https://www.googleapis.com/auth/keep.readonly');
 
 // Flag to indicate if we are in the middle of a sign-in flow.
 let isSigningIn = false;

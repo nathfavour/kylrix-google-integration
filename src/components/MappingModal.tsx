@@ -31,7 +31,9 @@ import {
   Database,
   Terminal,
   ArrowRight,
-  Video
+  Video,
+  Presentation,
+  ClipboardList
 } from 'lucide-react';
 import { GoogleService, GoogleServiceKey } from '../types';
 import Logo from './Logo';
@@ -92,6 +94,16 @@ export const MappingModal: React.FC<MappingModalProps> = ({
     defaultAccessType: 'TRUSTED',
   });
 
+  const [slidesConfig, setSlidesConfig] = useState({
+    vaultLocation: 'Imports/GoogleSlides',
+    autoExportToPDF: false,
+  });
+
+  const [formsConfig, setFormsConfig] = useState({
+    connectChannel: '#forms-activity',
+    trackResponses: true,
+  });
+
   useEffect(() => {
     // Reset or load initial mocks depending on the selected service
   }, [service]);
@@ -105,6 +117,8 @@ export const MappingModal: React.FC<MappingModalProps> = ({
     else if (service.key === 'gmail') activeConfig = gmailConfig;
     else if (service.key === 'docs') activeConfig = docsConfig;
     else if (service.key === 'meet') activeConfig = meetConfig;
+    else if (service.key === 'slides') activeConfig = slidesConfig;
+    else if (service.key === 'forms') activeConfig = formsConfig;
 
     onSave(service.key, activeConfig);
     onClose();
@@ -643,6 +657,118 @@ export const MappingModal: React.FC<MappingModalProps> = ({
                 sx={{
                   '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
                     backgroundColor: '#00AC47 !important'
+                  }
+                }}
+              />
+            </Box>
+          </Stack>
+        );
+
+      case 'slides':
+        return (
+          <Stack spacing={3}>
+            <Alert 
+              severity="info" 
+              sx={{ 
+                bgcolor: '#1C1A18', 
+                border: '1px solid #34322F', 
+                color: '#FFFFFF',
+                borderRadius: '12px',
+                '& .MuiAlert-icon': { color: '#F4B400' }
+              }}
+              icon={<Presentation size={20} />}
+            >
+              Slides integration enables automatic synchronization of your Google Presentations. Slides are securely cataloged in your workspace vault.
+            </Alert>
+
+            <FormControl fullWidth size="small">
+              <Typography sx={{ color: '#9B9691', fontSize: '12px', fontWeight: 600, mb: 1, textTransform: 'uppercase' }}>
+                Default Vault Storage Location
+              </Typography>
+              <TextField 
+                value={slidesConfig.vaultLocation}
+                onChange={(e) => setSlidesConfig({ ...slidesConfig, vaultLocation: e.target.value })}
+                size="small"
+                variant="outlined"
+                sx={{
+                  bgcolor: '#0A0908',
+                  borderRadius: '12px',
+                  border: '1px solid #1C1A18',
+                  input: { color: '#FFFFFF' },
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                  '&:hover': { border: '1px solid #34322F' },
+                  '&.Mui-focused': { border: '1px solid #F4B400' },
+                }}
+              />
+            </FormControl>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, bgcolor: '#161412', borderRadius: '12px', border: '1px solid #1C1A18' }}>
+              <Box>
+                <Typography sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}>Auto-Convert to PDF</Typography>
+                <Typography sx={{ color: '#9B9691', fontSize: '12px' }}>Convert slide decks to PDF formats for offline mobile inspection.</Typography>
+              </Box>
+              <Switch 
+                checked={slidesConfig.autoExportToPDF} 
+                onChange={(e) => setSlidesConfig({ ...slidesConfig, autoExportToPDF: e.target.checked })}
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    backgroundColor: '#F4B400 !important'
+                  }
+                }}
+              />
+            </Box>
+          </Stack>
+        );
+
+      case 'forms':
+        return (
+          <Stack spacing={3}>
+            <Alert 
+              severity="info" 
+              sx={{ 
+                bgcolor: '#1C1A18', 
+                border: '1px solid #34322F', 
+                color: '#FFFFFF',
+                borderRadius: '12px',
+                '& .MuiAlert-icon': { color: '#673AB7' }
+              }}
+              icon={<ClipboardList size={20} />}
+            >
+              Forms API routes incoming submission webhooks or polling events directly into custom Connect streams.
+            </Alert>
+
+            <FormControl fullWidth size="small">
+              <Typography sx={{ color: '#9B9691', fontSize: '12px', fontWeight: 600, mb: 1, textTransform: 'uppercase' }}>
+                Kylrix Connect Broadcast Channel
+              </Typography>
+              <TextField 
+                value={formsConfig.connectChannel}
+                onChange={(e) => setFormsConfig({ ...formsConfig, connectChannel: e.target.value })}
+                size="small"
+                variant="outlined"
+                sx={{
+                  bgcolor: '#0A0908',
+                  borderRadius: '12px',
+                  border: '1px solid #1C1A18',
+                  input: { color: '#FFFFFF' },
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                  '&:hover': { border: '1px solid #34322F' },
+                  '&.Mui-focused': { border: '1px solid #673AB7' },
+                }}
+              />
+            </FormControl>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, bgcolor: '#161412', borderRadius: '12px', border: '1px solid #1C1A18' }}>
+              <Box>
+                <Typography sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}>Active Response Tracking</Typography>
+                <Typography sx={{ color: '#9B9691', fontSize: '12px' }}>Receive instant notifications upon form submissions.</Typography>
+              </Box>
+              <Switch 
+                checked={formsConfig.trackResponses} 
+                onChange={(e) => setFormsConfig({ ...formsConfig, trackResponses: e.target.checked })}
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    backgroundColor: '#673AB7 !important'
                   }
                 }}
               />
