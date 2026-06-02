@@ -178,14 +178,14 @@ export default function App() {
           {/* Main Desktop Sidebar */}
           <Box 
             sx={{ 
-              width: { xs: '70px', lg: '240px' }, 
+              width: { md: '230px', lg: '260px' }, 
               bgcolor: '#0A0908', 
-              borderRight: '1px solid #1C1A18', 
+              borderRight: '1px solid #23211F', 
               p: 2,
-              display: 'flex',
+              display: { xs: 'none', md: 'flex' },
               flexDirection: 'column',
               justifyContent: 'space-between',
-              alignItems: { xs: 'center', lg: 'stretch' }
+              alignItems: 'stretch'
             }}
           >
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -193,13 +193,13 @@ export default function App() {
               <Button
                 onClick={() => setActivePage('note')}
                 sx={{
-                  justifyContent: { xs: 'center', lg: 'flex-start' },
+                  justifyContent: 'flex-start',
                   px: 2,
                   py: 1.5,
                   borderRadius: '16px',
                   bgcolor: activePage === 'note' ? '#161412' : 'transparent',
                   color: activePage === 'note' ? '#EC4899' : '#9B9691',
-                  border: activePage === 'note' ? '1px solid #1C1A18' : '1px solid transparent',
+                  border: activePage === 'note' ? '1px solid #23211F' : '1px solid transparent',
                   '&:hover': {
                     bgcolor: '#161412',
                     color: '#EC4899'
@@ -207,7 +207,7 @@ export default function App() {
                 }}
               >
                 <BookOpen size={18} />
-                <Typography sx={{ display: { xs: 'none', lg: 'block' }, ml: 2, fontWeight: 700, fontSize: '13px' }}>
+                <Typography sx={{ ml: 2, fontWeight: 700, fontSize: '13px', fontFamily: '"Space Grotesk", sans-serif' }}>
                   Kylrix Note
                 </Typography>
               </Button>
@@ -216,13 +216,13 @@ export default function App() {
               <Button
                 onClick={() => setActivePage('flow')}
                 sx={{
-                  justifyContent: { xs: 'center', lg: 'flex-start' },
+                  justifyContent: 'flex-start',
                   px: 2,
                   py: 1.5,
                   borderRadius: '16px',
                   bgcolor: activePage === 'flow' ? '#161412' : 'transparent',
                   color: activePage === 'flow' ? '#A855F7' : '#9B9691',
-                  border: activePage === 'flow' ? '1px solid #1C1A18' : '1px solid transparent',
+                  border: activePage === 'flow' ? '1px solid #23211F' : '1px solid transparent',
                   '&:hover': {
                     bgcolor: '#161412',
                     color: '#A855F7'
@@ -230,7 +230,7 @@ export default function App() {
                 }}
               >
                 <CheckSquare size={18} />
-                <Typography sx={{ display: { xs: 'none', lg: 'block' }, ml: 2, fontWeight: 700, fontSize: '13px' }}>
+                <Typography sx={{ ml: 2, fontWeight: 700, fontSize: '13px', fontFamily: '"Space Grotesk", sans-serif' }}>
                   Kylrix Flow
                 </Typography>
               </Button>
@@ -239,13 +239,13 @@ export default function App() {
               <Button
                 onClick={() => setActivePage('vault')}
                 sx={{
-                  justifyContent: { xs: 'center', lg: 'flex-start' },
+                  justifyContent: 'flex-start',
                   px: 2,
                   py: 1.5,
                   borderRadius: '16px',
                   bgcolor: activePage === 'vault' ? '#161412' : 'transparent',
                   color: activePage === 'vault' ? '#10B981' : '#9B9691',
-                  border: activePage === 'vault' ? '1px solid #1C1A18' : '1px solid transparent',
+                  border: activePage === 'vault' ? '1px solid #23211F' : '1px solid transparent',
                   '&:hover': {
                     bgcolor: '#161412',
                     color: '#10B981'
@@ -253,7 +253,7 @@ export default function App() {
                 }}
               >
                 <ShieldAlert size={18} />
-                <Typography sx={{ display: { xs: 'none', lg: 'block' }, ml: 2, fontWeight: 700, fontSize: '13px' }}>
+                <Typography sx={{ ml: 2, fontWeight: 700, fontSize: '13px', fontFamily: '"Space Grotesk", sans-serif' }}>
                   Kylrix Vault
                 </Typography>
               </Button>
@@ -262,13 +262,13 @@ export default function App() {
               <Button
                 onClick={() => setActivePage('connect')}
                 sx={{
-                  justifyContent: { xs: 'center', lg: 'flex-start' },
+                  justifyContent: 'flex-start',
                   px: 2,
                   py: 1.5,
                   borderRadius: '16px',
                   bgcolor: activePage === 'connect' ? '#161412' : 'transparent',
                   color: activePage === 'connect' ? '#F59E0B' : '#9B9691',
-                  border: activePage === 'connect' ? '1px solid #1C1A18' : '1px solid transparent',
+                  border: activePage === 'connect' ? '1px solid #23211F' : '1px solid transparent',
                   '&:hover': {
                     bgcolor: '#161412',
                     color: '#F59E0B'
@@ -276,24 +276,24 @@ export default function App() {
                 }}
               >
                 <MessageSquare size={18} />
-                <Typography sx={{ display: { xs: 'none', lg: 'block' }, ml: 2, fontWeight: 700, fontSize: '13px' }}>
+                <Typography sx={{ ml: 2, fontWeight: 700, fontSize: '13px', fontFamily: '"Space Grotesk", sans-serif' }}>
                   Kylrix Connect
                 </Typography>
               </Button>
 
-              <Divider sx={{ my: 2, borderColor: '#1C1A18' }} />
+              <Divider sx={{ my: 2, borderColor: '#23211F' }} />
 
               {/* Settings Tab */}
               <Button
                 onClick={() => setActivePage('settings')}
                 sx={{
-                  justifyContent: { xs: 'center', lg: 'flex-start' },
+                  justifyContent: 'flex-start',
                   px: 2,
                   py: 1.5,
                   borderRadius: '16px',
                   bgcolor: activePage === 'settings' ? '#161412' : 'transparent',
                   color: activePage === 'settings' ? '#6366F1' : '#9B9691',
-                  border: activePage === 'settings' ? '1px solid #1D1C1B' : '1px solid transparent',
+                  border: activePage === 'settings' ? '1px solid #23211F' : '1px solid transparent',
                   '&:hover': {
                     bgcolor: '#161412',
                     color: '#6366F1'
@@ -301,7 +301,7 @@ export default function App() {
                 }}
               >
                 <Settings size={18} />
-                <Typography sx={{ display: { xs: 'none', lg: 'block' }, ml: 2, fontWeight: 700, fontSize: '13px' }}>
+                <Typography sx={{ ml: 2, fontWeight: 700, fontSize: '13px', fontFamily: '"Space Grotesk", sans-serif' }}>
                   System Settings
                 </Typography>
               </Button>
@@ -309,8 +309,8 @@ export default function App() {
 
             {/* Bottom Support context */}
             <Box sx={{ display: { xs: 'none', lg: 'flex' }, flexDirection: 'column', gap: 1 }}>
-              <Box sx={{ p: 2, bgcolor: '#161412', borderRadius: '16px', border: '1px solid #1C1A18' }}>
-                <Typography sx={{ color: '#FFFFFF', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ p: 2, bgcolor: '#161412', borderRadius: '16px', border: '1px solid #23211F' }}>
+                <Typography sx={{ color: '#FFFFFF', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1, fontFamily: '"Space Grotesk", sans-serif' }}>
                   <Info size={12} style={{ color: '#6366F1' }} /> UI Versatility
                 </Typography>
                 <Typography sx={{ color: '#9B9691', fontSize: '11px', mt: 0.5 }}>
@@ -321,7 +321,7 @@ export default function App() {
           </Box>
 
           {/* Core Content Presentation pane */}
-          <Box sx={{ flex: 1, p: { xs: 2.5, md: 5 }, bgcolor: '#000000', overflowY: 'auto' }}>
+          <Box sx={{ flex: 1, p: { xs: 2, md: 5 }, pb: { xs: 12, md: 5 }, bgcolor: '#000000', overflowY: 'auto' }}>
             
             <AnimatePresence mode="wait">
               
@@ -337,7 +337,7 @@ export default function App() {
                   <Box sx={{ maxWidth: '800px', mx: 'auto' }}>
                     
                     {/* Workspace Header */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+                    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, mb: 4 }}>
                       <Box>
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: '"Space Grotesk"', color: '#EC4899' }}>
                           Kylrix Note Canvas
@@ -357,6 +357,7 @@ export default function App() {
                           bgcolor: '#161412',
                           fontFamily: '"JetBrains Mono"',
                           fontSize: '11px',
+                          width: { xs: '100%', sm: 'auto' },
                           '&:hover': { bgcolor: '#0A0908', borderColor: '#EC4899' }
                         }}
                       >
@@ -369,12 +370,17 @@ export default function App() {
                       elevation={0}
                       sx={{ p: 2.5, bgcolor: '#161412', border: '1px solid #EC4899', borderRadius: '20px', mb: 3 }}
                     >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Box sx={{ p: 1, bgcolor: '#0A0908', borderRadius: '10px', color: '#EC4899' }}>
-                          <BookOpen size={20} />
+                      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2 }}>
+                        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', width: { xs: '100%', sm: 'auto' } }}>
+                          <Box sx={{ p: 1, bgcolor: '#0A0908', borderRadius: '10px', color: '#EC4899', display: 'flex' }}>
+                            <BookOpen size={20} />
+                          </Box>
+                          <Typography sx={{ display: { xs: 'block', sm: 'none' }, fontSize: '14px', fontWeight: 700, color: '#FFFFFF' }}>
+                            Migrating from Keep?
+                          </Typography>
                         </Box>
                         <Box sx={{ flex: 1 }}>
-                          <Typography sx={{ fontSize: '14px', fontWeight: 700, color: '#FFFFFF' }}>
+                          <Typography sx={{ display: { xs: 'none', sm: 'block' }, fontSize: '14px', fontWeight: 700, color: '#FFFFFF' }}>
                             Migranking from Google Keep?
                           </Typography>
                           <Typography sx={{ fontSize: '12px', color: '#9B9691' }}>
@@ -388,6 +394,7 @@ export default function App() {
                           sx={{ 
                             bgcolor: '#EC4899', 
                             color: '#FFFFFF',
+                            width: { xs: '100%', sm: 'auto' },
                             '&:hover': { bgcolor: '#D03B84' }
                           }}
                         >
@@ -440,7 +447,7 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                 >
                   <Box sx={{ maxWidth: '800px', mx: 'auto' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+                    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, mb: 4 }}>
                       <Box>
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: '"Space Grotesk"', color: '#A855F7' }}>
                           Kylrix Flow Workspace
@@ -460,6 +467,7 @@ export default function App() {
                           bgcolor: '#161412',
                           fontFamily: '"JetBrains Mono"',
                           fontSize: '11px',
+                          width: { xs: '100%', sm: 'auto' },
                           '&:hover': { bgcolor: '#0A0908', borderColor: '#A855F7' }
                         }}
                       >
@@ -562,12 +570,17 @@ export default function App() {
                       elevation={0}
                       sx={{ p: 2.5, bgcolor: '#161412', border: '1px solid #A855F7', borderRadius: '20px', mb: 3 }}
                     >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Box sx={{ p: 1, bgcolor: '#0A0908', borderRadius: '10px', color: '#A855F7' }}>
-                          <CheckSquare size={20} />
+                      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2 }}>
+                        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', width: { xs: '100%', sm: 'auto' } }}>
+                          <Box sx={{ p: 1, bgcolor: '#0A0908', borderRadius: '10px', color: '#A855F7', display: 'flex' }}>
+                            <CheckSquare size={20} />
+                          </Box>
+                          <Typography sx={{ display: { xs: 'block', sm: 'none' }, fontSize: '14px', fontWeight: 700, color: '#FFFFFF' }}>
+                            Tasks & Schedules
+                          </Typography>
                         </Box>
                         <Box sx={{ flex: 1 }}>
-                          <Typography sx={{ fontSize: '14px', fontWeight: 700, color: '#FFFFFF' }}>
+                          <Typography sx={{ display: { xs: 'none', sm: 'block' }, fontSize: '14px', fontWeight: 700, color: '#FFFFFF' }}>
                             Historical Tasks & Schedules detected
                           </Typography>
                           <Typography sx={{ fontSize: '12px', color: '#9B9691' }}>
@@ -581,6 +594,7 @@ export default function App() {
                           sx={{ 
                             bgcolor: '#A855F7', 
                             color: '#FFFFFF',
+                            width: { xs: '100%', sm: 'auto' },
                             '&:hover': { bgcolor: '#8F3FD0' }
                           }}
                         >
@@ -749,13 +763,13 @@ export default function App() {
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '3fr 9fr' }, gap: 4 }}>
                       
                       {/* Sub-settings vertical tabs sidebar representation */}
-                      <Box>
+                      <Box sx={{ display: { xs: 'none', md: 'block' } }}>
                         <Paper 
                           elevation={0}
                           sx={{ 
                             p: 2, 
                             bgcolor: '#161412', 
-                            border: '1px solid #1C1A18', 
+                            border: '1px solid #23211F', 
                             borderRadius: '20px',
                             display: 'flex',
                             flexDirection: 'column'
@@ -775,7 +789,7 @@ export default function App() {
                                 borderRadius: '10px',
                                 color: settingsTab === 0 ? '#FFFFFF' : '#9B9691',
                                 bgcolor: settingsTab === 0 ? '#0A0908' : 'transparent',
-                                border: settingsTab === 0 ? '1px solid #1D1C1B' : '1px solid transparent',
+                                border: settingsTab === 0 ? '1px solid #23211F' : '1px solid transparent',
                                 textTransform: 'none',
                                 fontSize: '13px',
                                 fontWeight: 700,
@@ -793,7 +807,7 @@ export default function App() {
                                 borderRadius: '10px',
                                 color: settingsTab === 1 ? '#FFFFFF' : '#9B9691',
                                 bgcolor: settingsTab === 1 ? '#0A0908' : 'transparent',
-                                border: settingsTab === 1 ? '1px solid #1D1C1B' : '1px solid transparent',
+                                border: settingsTab === 1 ? '1px solid #23211F' : '1px solid transparent',
                                 textTransform: 'none',
                                 fontSize: '13px',
                                 fontWeight: 700,
@@ -803,7 +817,7 @@ export default function App() {
                               Peer Encryption Mesh
                             </Button>
                             
-                            <Divider sx={{ my: 1.5, borderColor: '#1C1A18' }} />
+                            <Divider sx={{ my: 1.5, borderColor: '#23211F' }} />
                             
                             <Typography sx={{ color: '#9B9691', fontSize: '11px', fontFamily: '"JetBrains Mono"', fontWeight: 700, mb: 1, px: 1 }}>
                               EXTERNAL BRIDGE
@@ -818,7 +832,7 @@ export default function App() {
                                 borderRadius: '10px',
                                 color: settingsTab === 2 ? '#6366F1' : '#9B9691',
                                 bgcolor: settingsTab === 2 ? '#0A0908' : 'transparent',
-                                border: settingsTab === 2 ? '1px solid #1D1C1B' : '1px solid transparent',
+                                border: settingsTab === 2 ? '1px solid #23211F' : '1px solid transparent',
                                 textTransform: 'none',
                                 fontSize: '13px',
                                 fontWeight: 700,
@@ -837,7 +851,7 @@ export default function App() {
                                 borderRadius: '10px',
                                 color: settingsTab === 3 ? '#A855F7' : '#9B9691',
                                 bgcolor: settingsTab === 3 ? '#0A0908' : 'transparent',
-                                border: settingsTab === 3 ? '1px solid #1D1C1B' : '1px solid transparent',
+                                border: settingsTab === 3 ? '1px solid #23211F' : '1px solid transparent',
                                 textTransform: 'none',
                                 fontSize: '13px',
                                 fontWeight: 700,
@@ -848,6 +862,40 @@ export default function App() {
                             </Button>
                           </Box>
                         </Paper>
+                      </Box>
+
+                      {/* Sub-settings horizontal tabs - Mobile only */}
+                      <Box sx={{ display: { xs: 'flex', md: 'none' }, overflowX: 'auto', gap: 1, pb: 1, mb: 2, '&::-webkit-scrollbar': { display: 'none' } }}>
+                        {[
+                          { id: 0, label: 'Key-ring', color: '#575CF0' },
+                          { id: 1, label: 'Mesh', color: '#575CF0' },
+                          { id: 2, label: 'Google Suite', color: '#6366F1' },
+                          { id: 3, label: 'GitHub Bridge', color: '#A855F7' }
+                        ].map((subtab) => {
+                          const isActive = settingsTab === subtab.id;
+                          return (
+                            <Button
+                              key={subtab.id}
+                              onClick={() => setSettingsTab(subtab.id)}
+                              sx={{
+                                flexShrink: 0,
+                                px: 2,
+                                py: 1,
+                                borderRadius: '12px',
+                                color: isActive ? '#FFFFFF' : '#9B9691',
+                                bgcolor: isActive ? '#1E1B19' : '#141211',
+                                border: '1px solid',
+                                borderColor: isActive ? subtab.color : '#23211F',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                fontFamily: '"Space Grotesk"',
+                                '&:hover': { bgcolor: '#1E1B19' }
+                              }}
+                            >
+                              {subtab.label}
+                            </Button>
+                          );
+                        })}
                       </Box>
 
                       {/* Settings tab content viewport */}
@@ -956,6 +1004,77 @@ export default function App() {
           {/* Renders the EXACT same GoogleImportDashboard natively inside the global drawer overlay */}
           <GoogleIntegrationDashboard />
         </FocusDrawer>
+
+        {/* Mobile Bottom Navbar - Sticks strictly to the bottom viewport on small devices */}
+        <Box 
+          sx={{ 
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            bgcolor: '#0A0908',
+            borderTop: '1.5px solid #23211F', // Openbricks 2.0 Perfect Carbon Hairline
+            px: 2,
+            py: 1,
+            display: { xs: 'flex', md: 'none' },
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            zIndex: 999,
+            boxShadow: '0 -8px 24px rgba(0,0,0,0.9)'
+          }}
+        >
+          {[
+            { page: 'note', label: 'Note', icon: BookOpen, color: '#EC4899' },
+            { page: 'flow', label: 'Flow', icon: CheckSquare, color: '#A855F7' },
+            { page: 'vault', label: 'Vault', icon: ShieldAlert, color: '#10B981' },
+            { page: 'connect', label: 'Connect', icon: MessageSquare, color: '#F59E0B' },
+            { page: 'settings', label: 'Settings', icon: Settings, color: '#6366F1' }
+          ].map((item) => {
+            const Icon = item.icon;
+            const isSelected = activePage === item.page;
+            return (
+              <Button
+                key={item.page}
+                onClick={() => setActivePage(item.page as ActivePage)}
+                disableRipple
+                sx={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  py: 1,
+                  px: 0.5,
+                  minWidth: 0,
+                  bgcolor: 'transparent',
+                  color: isSelected ? item.color : '#9B9691',
+                  transition: 'all 0.15s ease-in-out',
+                  textTransform: 'none',
+                  '&:hover': { bgcolor: 'transparent' }
+                }}
+              >
+                <Box 
+                  sx={{ 
+                    p: 0.8, 
+                    borderRadius: '12px',
+                    bgcolor: isSelected ? '#161412' : 'transparent',
+                    border: '1px solid',
+                    borderColor: isSelected ? '#23211F' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mb: 0.5,
+                    color: isSelected ? item.color : '#9B9691'
+                  }}
+                >
+                  <Icon size={18} />
+                </Box>
+                <Typography sx={{ fontSize: '10px', fontWeight: isSelected ? 800 : 500, fontFamily: '"Space Grotesk"', color: isSelected ? '#EBF1FD' : '#9B9691' }}>
+                  {item.label}
+                </Typography>
+              </Button>
+            );
+          })}
+        </Box>
       </Box>
     </ThemeProvider>
   );
