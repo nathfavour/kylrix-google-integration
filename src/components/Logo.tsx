@@ -60,11 +60,11 @@ const Logo: React.FC<LogoProps> = ({
 
       {/* Vertices (Unified Ecosystem Color: Indigo) */}
       <circle cx="50" cy="10" r="4" fill="#6366F1" stroke="#000000" strokeWidth="1.5" />
-      <circle cx="85" cy="30" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
-      <circle cx="85" cy="70" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
-      <circle cx="50" cy="90" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
-      <circle cx="15" cy="70" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
-      <circle cx="15" cy="30" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
+      <circle cx="85" cy="30" r="4" fill="#6366F1" stroke="#000000" strokeWidth="1.5" />
+      <circle cx="85" cy="70" r="4" fill="#6366F1" stroke="#000000" strokeWidth="1.5" />
+      <circle cx="50" cy="90" r="4" fill="#6366F1" stroke="#000000" strokeWidth="1.5" />
+      <circle cx="15" cy="70" r="4" fill="#6366F1" stroke="#000000" strokeWidth="1.5" />
+      <circle cx="15" cy="30" r="4" fill="#6366F1" stroke="#000000" strokeWidth="1.5" />
       
       {/* Core Hub */}
       <circle cx="50" cy="50" r="5" fill="#6366F1" stroke="#000000" strokeWidth="2" />
