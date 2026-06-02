@@ -31,34 +31,6 @@ const Logo: React.FC<LogoProps> = ({
   };
 
   const current = appColors[app] || appColors.root;
-  const ecosystemPrimary = '#6366F1';
-  const isEcosystemBrand = app === 'root' || app === 'accounts' || app === 'kylrix';
-  
-  const leftColor = isEcosystemBrand ? '#FFFFFF' : ecosystemPrimary;
-  const rightColor = isEcosystemBrand ? ecosystemPrimary : current.accent;
-  const cutoutColor = '#0A0908'; // Matches pitch-black background exactly
-
-  const renderCutout = () => {
-    switch (app) {
-      case 'note':
-      case 'vault':
-      case 'flow':
-      case 'connect':
-        return (
-          <rect
-            x="38"
-            y="38"
-            width="24"
-            height="24"
-            fill={cutoutColor}
-            transform="rotate(45 50 50)"
-          />
-        );
-      case 'root':
-      default:
-        return <polygon points="50,38 62,50 50,62 38,50" fill={cutoutColor} />;
-    }
-  };
 
   const Hexagon = (
     <motion.svg
@@ -73,20 +45,29 @@ const Logo: React.FC<LogoProps> = ({
         minWidth: size,
       }}
     >
-      {/* Left Hemisphere */}
-      <polygon
-        points="50,10 15,30 15,70 50,90"
-        fill={leftColor}
-        style={{ transition: 'fill 0.4s ease' }}
-      />
-      {/* Right Hemisphere */}
-      <polygon
-        points="50,10 85,30 85,70 50,90"
-        fill={rightColor}
-        style={{ transition: 'fill 0.4s ease' }}
-      />
-      {/* Center Cutout */}
-      {renderCutout()}
+      {/* Outer Boundary Edges */}
+      <line x1="15" y1="30" x2="50" y2="10" stroke="#EC4899" strokeWidth="3.5" strokeLinecap="round" />
+      <line x1="50" y1="10" x2="85" y2="30" stroke="#10B981" strokeWidth="3.5" strokeLinecap="round" />
+      <line x1="85" y1="30" x2="85" y2="70" stroke="#EC4899" strokeWidth="3.5" strokeLinecap="round" />
+      <line x1="85" y1="70" x2="50" y2="90" stroke="#A855F7" strokeWidth="3.5" strokeLinecap="round" />
+      <line x1="50" y1="90" x2="15" y2="70" stroke="#EC4899" strokeWidth="3.5" strokeLinecap="round" />
+      <line x1="15" y1="70" x2="15" y2="30" stroke="#F59E0B" strokeWidth="3.5" strokeLinecap="round" />
+
+      {/* Inner Seam Edges */}
+      <line x1="50" y1="50" x2="15" y2="30" stroke="#A855F7" strokeWidth="3.5" strokeLinecap="round" />
+      <line x1="50" y1="50" x2="85" y2="30" stroke="#F59E0B" strokeWidth="3.5" strokeLinecap="round" />
+      <line x1="50" y1="50" x2="50" y2="90" stroke="#10B981" strokeWidth="3.5" strokeLinecap="round" />
+
+      {/* Vertices (Unified Ecosystem Color: Indigo) */}
+      <circle cx="50" cy="10" r="4" fill="#6366F1" stroke="#000000" strokeWidth="1.5" />
+      <circle cx="85" cy="30" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
+      <circle cx="85" cy="70" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
+      <circle cx="50" cy="90" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
+      <circle cx="15" cy="70" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
+      <circle cx="15" cy="30" r="4" fill="#6366F1" stroke="#000000" stroke-width="1.5" />
+      
+      {/* Core Hub */}
+      <circle cx="50" cy="50" r="5" fill="#6366F1" stroke="#000000" strokeWidth="2" />
     </motion.svg>
   );
 
