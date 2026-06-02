@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // User Profile Validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'userId']) 
+        && data.keys().size() <= 8
+        && data.email is string && data.email.size() <= 256
+        && data.userId is string && data.userId.size() <= 128
+        && (!data.keys().contains('displayName') || (data.displayName is string && data.displayName.size() <= 128));
+    }
+
+    // Note Validation
+    function isValidNote(data, authUid) {
+      return data.keys().hasAll(['userId', 'title'])
+        && data.keys().size() <= 8
+        && data.userId == authUid
+        && data.title is string && data.title.size() <= 256
+        && (!data.keys().contains('content') || (data.content is string && data.content.size() <= 50000));
+    }
+
+    // Task Validation
+    function isValidTask(data, authUid) {
+      return data.keys().hasAll(['userId', 'task', 'priority', 'status'])
+        && data.keys().size() <= 8
+        && data.userId == authUid
+        && data.task is string && data.task.size() <= 1024
+        && data.priority in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+        && data.status is string && data.status.size() <= 64;
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) 
+        && request.resource.data.userId == resource.data.userId;
+      allow delete: if false; // Users cannot be deleted from Client SDK
+
+      // 2. Notes collection
+      match /notes/{noteId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(noteId) && isValidNote(request.resource.data, userId);
+        allow update: if isOwner(userId) && isValidId(noteId) && isValidNote(request.resource.data, userId)
+          && request.resource.data.userId == resource.data.userId;
+        allow delete: if isOwner(userId) && isValidId(noteId);
+      }
+
+      // 3. Tasks collection
+      match /tasks/{taskId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(taskId) && isValidTask(request.resource.data, userId);
+        allow update: if isOwner(userId) && isValidId(taskId) && isValidTask(request.resource.data, userId)
+          && request.resource.data.userId == resource.data.userId;
+        allow delete: if isOwner(userId) && isValidId(taskId);
+      }
+    }
+  }
+}

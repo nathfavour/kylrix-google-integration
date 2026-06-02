@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   CssBaseline, 
@@ -10,7 +10,12 @@ import {
   Paper,
   Tabs,
   Tab,
-  Chip
+  Chip,
+  TextField,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel
 } from '@mui/material';
 import { 
   BookOpen, 
@@ -28,7 +33,11 @@ import {
   User,
   ExternalLink,
   Info,
-  Calendar
+  Calendar,
+  Trash2,
+  Plus,
+  RefreshCw,
+  LogIn
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { kylrixTheme } from './theme';
@@ -36,6 +45,19 @@ import Logo from './components/Logo';
 import { FocusDrawer } from './components/FocusDrawer';
 import { GoogleIntegrationDashboard } from './components/GoogleIntegrationDashboard';
 import { GitHubIntegrationDashboard } from './components/GitHubIntegrationDashboard';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, googleSignIn, logout } from './googleAuth';
+import { 
+  testFirestoreConnection, 
+  syncUserRecord, 
+  subscribeNotes, 
+  addNoteCloud, 
+  deleteNoteCloud, 
+  subscribeTasks, 
+  addTaskCloud, 
+  updateTaskCloud, 
+  deleteTaskCloud 
+} from './firebaseInit';
 
 type ActivePage = 'note' | 'flow' | 'vault' | 'connect' | 'settings';
 
@@ -48,6 +70,19 @@ export default function App() {
   // GitHub task transfer state
   const [githubTaskPayload, setGithubTaskPayload] = useState<{ id: string; task: string; priority: string } | null>(null);
 
+  // Firebase User & Subscription States
+  const [user, setUser] = useState<any | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+
+  // Form input states for note quick adding (Openbricks 2.0 aesthetics)
+  const [newNoteTitle, setNewNoteTitle] = useState('');
+  const [newNoteContent, setNewNoteContent] = useState('');
+
+  // Form input states for task quick adding
+  const [newTaskText, setNewTaskText] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState('MEDIUM');
+  const [newTaskStatus, setNewTaskStatus] = useState('In Progress');
+
   // Simulated active drafting stats for Note & Flow
   const [activeNotes, setActiveNotes] = useState([
     { id: '1', title: 'Local mesh synchronization specs', date: '5 mins ago', size: '2.4kb' },
@@ -59,6 +94,146 @@ export default function App() {
     { id: '1', task: 'Review Rust storage daemon bindings', priority: 'CRITICAL', status: 'In Progress' },
     { id: '2', task: 'Establish local agent communication logs', priority: 'MEDIUM', status: 'Backlog' }
   ]);
+
+  // Sync Firebase Auth states, user doc and real-time database snapshot pipelines on mount
+  useEffect(() => {
+    testFirestoreConnection();
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      setAuthLoading(true);
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        await syncUserRecord(firebaseUser);
+
+        // real-time notes pipeline
+        const unsubNotes = subscribeNotes(
+          firebaseUser.uid,
+          (notesList) => {
+            if (notesList.length > 0) {
+              const formatted = notesList.map(n => ({
+                id: n.id,
+                title: n.title,
+                date: n.updatedAt ? new Date(n.updatedAt).toLocaleDateString() : 'Just now',
+                size: n.content ? `${(n.content.length / 1024).toFixed(1)}kb` : '0kb'
+              }));
+              setActiveNotes(formatted);
+            }
+          },
+          (err) => console.error(err)
+        );
+
+        // real-time tasks pipeline
+        const unsubTasks = subscribeTasks(
+          firebaseUser.uid,
+          (tasksList) => {
+            if (tasksList.length > 0) {
+              const formatted = tasksList.map(t => ({
+                id: t.id,
+                task: t.task,
+                priority: t.priority,
+                status: t.status
+              }));
+              setActiveTasks(formatted);
+            }
+          },
+          (err) => console.error(err)
+        );
+
+        setAuthLoading(false);
+        return () => {
+          unsubNotes();
+          unsubTasks();
+        };
+      } else {
+        setUser(null);
+        setAuthLoading(false);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+    };
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      await googleSignIn();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleGoogleSignOut = async () => {
+    const confirmSignOut = window.confirm("Disconnect security key and signs out from passive Cloud syncing?");
+    if (confirmSignOut) {
+      await logout();
+      setUser(null);
+    }
+  };
+
+  const handleCreateNote = async () => {
+    if (!newNoteTitle.trim()) return;
+    const noteId = 'note_' + Math.random().toString(36).substring(2, 9);
+    
+    if (user) {
+      await addNoteCloud(user.uid, noteId, newNoteTitle, newNoteContent);
+    } else {
+      setActiveNotes(prev => [
+        { 
+          id: noteId, 
+          title: newNoteTitle, 
+          date: 'Just now', 
+          size: `${(newNoteContent.length / 1024).toFixed(1)}kb` 
+        },
+        ...prev
+      ]);
+    }
+    setNewNoteTitle('');
+    setNewNoteContent('');
+  };
+
+  const handleDeleteNote = async (id: string) => {
+    if (user) {
+      await deleteNoteCloud(user.uid, id);
+    } else {
+      setActiveNotes(prev => prev.filter(n => n.id !== id));
+    }
+  };
+
+  const handleCreateTask = async () => {
+    if (!newTaskText.trim()) return;
+    const taskId = 'task_' + Math.random().toString(36).substring(2, 9);
+
+    if (user) {
+      await addTaskCloud(user.uid, taskId, newTaskText, newTaskPriority, newTaskStatus);
+    } else {
+      setActiveTasks(prev => [
+        { id: taskId, task: newTaskText, priority: newTaskPriority, status: newTaskStatus },
+        ...prev
+      ]);
+    }
+    setNewTaskText('');
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    if (user) {
+      await deleteTaskCloud(user.uid, id);
+    } else {
+      setActiveTasks(prev => prev.filter(t => t.id !== id));
+    }
+  };
+
+  const handleUpdateTaskStatus = async (id: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'In Progress' ? 'Completed' : 'In Progress';
+    if (user) {
+      const existingTask = activeTasks.find(t => t.id === id);
+      if (existingTask) {
+        await updateTaskCloud(user.uid, id, existingTask.task, existingTask.priority, nextStatus);
+      }
+    } else {
+      setActiveTasks(prev => prev.map(t => t.id === id ? { ...t, status: nextStatus } : t));
+    }
+  };
 
   const getAppFromPage = (page: ActivePage): any => {
     if (page === 'settings') return 'root';
@@ -163,12 +338,70 @@ export default function App() {
               Trigger Bottom Drawer UI
             </Button>
 
-            <IconButton 
-              sx={{ color: '#9B9691', bgcolor: '#161412', border: '1px solid #1D1C1B', borderRadius: '8px' }}
-              title="Identity config"
-            >
-              <User size={14} />
-            </IconButton>
+            {user ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pl: 1 }}>
+                {user.photoURL ? (
+                  <img 
+                    src={user.photoURL} 
+                    alt={user.displayName || 'Sovereign'} 
+                    referrerPolicy="no-referrer"
+                    style={{ width: 28, height: 28, borderRadius: '50%', border: '1.5px solid #23211F' }} 
+                  />
+                ) : (
+                  <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: '#161412', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1.5px solid #23211F' }}>
+                    <User size={13} style={{ color: '#6366F1' }} />
+                  </Box>
+                )}
+                <Box sx={{ display: { xs: 'none', lg: 'block' } }}>
+                  <Typography sx={{ fontSize: '11px', fontWeight: 800, color: '#EBF1FD', lineHeight: 1.2 }}>
+                    {user.displayName || 'Authorized'}
+                  </Typography>
+                  <Typography sx={{ fontSize: '9px', color: '#10B981', fontFamily: '"JetBrains Mono"' }}>
+                    CLOUD SYNC ACTIVE
+                  </Typography>
+                </Box>
+                <Button
+                  onClick={handleGoogleSignOut}
+                  size="small"
+                  variant="outlined"
+                  sx={{ 
+                    px: 1.2, 
+                    py: 0.5,
+                    minWidth: 0,
+                    borderRadius: '6px',
+                    borderColor: '#23211F',
+                    color: '#EF4444',
+                    fontFamily: '"Space Grotesk"',
+                    fontSize: '11px',
+                    '&:hover': { borderColor: '#EF4444', bgcolor: 'transparent' }
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </Box>
+            ) : (
+              <Button
+                onClick={handleGoogleSignIn}
+                size="small"
+                variant="outlined"
+                startIcon={<LogIn size={11} />}
+                sx={{
+                  borderColor: '#23211F',
+                  color: '#6366F1',
+                  bgcolor: '#141211',
+                  fontFamily: '"Space Grotesk"',
+                  fontSize: '11px',
+                  borderRadius: '8px',
+                  px: 2,
+                  '&:hover': {
+                    borderColor: '#6366F1',
+                    bgcolor: '#1D1C1B'
+                  }
+                }}
+              >
+                Connect Firebase Auth
+              </Button>
+            )}
           </Box>
         </Box>
 
@@ -403,10 +636,107 @@ export default function App() {
                       </Box>
                     </Paper>
 
+                    {/* Sovereign Note Composer */}
+                    <Box sx={{ mb: 3 }}>
+                      <Paper 
+                        elevation={0}
+                        sx={{ 
+                          p: 3, 
+                          bgcolor: '#141211', 
+                          border: '1px solid #23211F', 
+                          borderRadius: '24px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 2
+                        }}
+                      >
+                        <Typography sx={{ color: '#EBF1FD', fontSize: '13px', fontWeight: 800, fontFamily: '"Space Grotesk"', display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <BookOpen size={14} style={{ color: '#EC4899' }} />
+                          DRAFT SECURE NOTE NODE
+                        </Typography>
+
+                        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2 }}>
+                          <TextField
+                            size="small"
+                            placeholder="Enter Note title..."
+                            value={newNoteTitle}
+                            onChange={(e) => setNewNoteTitle(e.target.value)}
+                            sx={{
+                              flex: 1,
+                              '& .MuiOutlinedInput-root': {
+                                bgcolor: '#0A0908',
+                                borderRadius: '12px',
+                                border: '1px solid #23211F',
+                                fontFamily: '"Space Grotesk"',
+                                fontSize: '13px',
+                                color: '#FFFFFF',
+                                '& fieldset': { border: 'none' },
+                                '&:hover': { border: '1px solid #EC4899' },
+                                '&.Mui-focused': { border: '1px solid #EC4899' }
+                              }
+                            }}
+                          />
+                          
+                          <Button
+                            onClick={handleCreateNote}
+                            variant="contained"
+                            disabled={!newNoteTitle.trim()}
+                            startIcon={<Plus size={14} />}
+                            sx={{
+                              bgcolor: '#EC4899',
+                              color: '#FFFFFF',
+                              borderRadius: '12px',
+                              fontFamily: '"Space Grotesk"',
+                              fontWeight: 700,
+                              fontSize: '12px',
+                              px: 3,
+                              '&:hover': { bgcolor: '#D33B85' },
+                              '&.Mui-disabled': { bgcolor: '#161412', color: '#9B9691', border: '1px solid #23211F' }
+                            }}
+                          >
+                            Deploy Node
+                          </Button>
+                        </Box>
+
+                        <TextField
+                          multiline
+                          rows={3}
+                          placeholder="Node content or secret payloads go here..."
+                          value={newNoteContent}
+                          onChange={(e) => setNewNoteContent(e.target.value)}
+                          sx={{
+                            width: '100%',
+                            '& .MuiOutlinedInput-root': {
+                              bgcolor: '#0A0908',
+                              borderRadius: '14px',
+                              border: '1px solid #23211F',
+                              fontFamily: '"Satoshi"',
+                              fontSize: '13px',
+                              color: '#FFFFFF',
+                              p: 2,
+                              '& fieldset': { border: 'none' },
+                              '&:hover': { border: '1px solid #EC4899' },
+                              '&.Mui-focused': { border: '1px solid #EC4899' }
+                            }
+                          }}
+                        />
+
+                        {user ? (
+                          <Typography sx={{ fontSize: '10px', color: '#10B981', fontFamily: '"JetBrains Mono"' }}>
+                            ● DEPLOYING SECURELY TO CLOUD FIRESTORE SUITE
+                          </Typography>
+                        ) : (
+                          <Typography sx={{ fontSize: '10px', color: '#F59E0B', fontFamily: '"JetBrains Mono"' }}>
+                            ▲ DEMO / DEPLOYING OFFLINE-ONLY. CONNECT FIREBASE AUTH FOR SECURE REAL-TIME CLOUD STORAGE.
+                          </Typography>
+                        )}
+                      </Paper>
+                    </Box>
+
                     {/* Editor Mock */}
                     <Paper 
                       elevation={0}
-                      sx={{ p: 3, bgcolor: '#161412', border: '1px solid #1C1A18', borderRadius: '24px', minHeight: '300px' }}
+                      sx={{ p: 3, bgcolor: '#161412', border: '1px solid #23211F', borderRadius: '24px', minHeight: '300px' }}
                     >
                       <Typography sx={{ color: '#EBF1FD', fontSize: '18px', fontWeight: 800, fontFamily: '"Space Grotesk"', mb: 2 }}>
                         # Sovereign Knowledge Engineering Strategy
@@ -420,14 +750,25 @@ export default function App() {
                       </Typography>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                         {activeNotes.map(n => (
-                          <Box key={n.id} sx={{ p: 1.5, bgcolor: '#0A0908', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #1C1A18' }}>
+                          <Box key={n.id} sx={{ p: 1.5, bgcolor: '#0A0908', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #23211F' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                               <FileCode size={14} style={{ color: '#EC4899' }} />
-                              <Typography sx={{ fontSize: '13px', color: '#FFFFFF' }}>{n.title}</Typography>
+                              <Typography sx={{ fontSize: '13px', color: '#FFFFFF', fontFamily: '"Space Grotesk"', fontWeight: 700 }}>{n.title}</Typography>
                             </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Chip label={n.size} size="small" sx={{ height: '20px', fontSize: '10px', bgcolor: '#161412', color: '#9B9691' }} />
-                              <Typography sx={{ fontSize: '11px', color: '#9B9691', fontFamily: '"JetBrains Mono"' }}>{n.date}</Typography>
+                            
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Chip label={n.size} size="small" sx={{ height: '20px', fontSize: '10px', bgcolor: '#161412', color: '#9B9691' }} />
+                                <Typography sx={{ fontSize: '11px', color: '#9B9691', fontFamily: '"JetBrains Mono"' }}>{n.date}</Typography>
+                              </Box>
+                              
+                              <IconButton 
+                                onClick={() => handleDeleteNote(n.id)}
+                                size="small"
+                                sx={{ color: '#EF4444', p: 0.5, '&:hover': { bgcolor: 'rgba(239,68,68,0.1)' } }}
+                              >
+                                <Trash2 size={13} />
+                              </IconButton>
                             </Box>
                           </Box>
                         ))}
@@ -603,22 +944,165 @@ export default function App() {
                       </Box>
                     </Paper>
 
+                    {/* Sovereign Flow Task Creator */}
+                    <Box sx={{ mb: 3 }}>
+                      <Paper 
+                        elevation={0}
+                        sx={{ 
+                          p: 3, 
+                          bgcolor: '#141211', 
+                          border: '1px solid #23211F', 
+                          borderRadius: '24px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 2
+                        }}
+                      >
+                        <Typography sx={{ color: '#EBF1FD', fontSize: '13px', fontWeight: 800, fontFamily: '"Space Grotesk"', display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <CheckSquare size={14} style={{ color: '#A855F7' }} />
+                          DRAFT FLOW PIPELINE NODE
+                        </Typography>
+
+                        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2, alignItems: 'center' }}>
+                          <TextField
+                            size="small"
+                            placeholder="Draft key operational directive / task..."
+                            value={newTaskText}
+                            onChange={(e) => setNewTaskText(e.target.value)}
+                            sx={{
+                              flex: 3,
+                              width: '100%',
+                              '& .MuiOutlinedInput-root': {
+                                bgcolor: '#0A0908',
+                                borderRadius: '12px',
+                                border: '1px solid #23211F',
+                                fontFamily: '"Space Grotesk"',
+                                fontSize: '13px',
+                                color: '#FFFFFF',
+                                '& fieldset': { border: 'none' },
+                                '&:hover': { border: '1px solid #A855F7' },
+                                '&.Mui-focused': { border: '1px solid #A855F7' }
+                              }
+                            }}
+                          />
+
+                          <FormControl size="small" sx={{ flex: 1, width: '100%' }}>
+                            <Select
+                              value={newTaskPriority}
+                              onChange={(e) => setNewTaskPriority(e.target.value)}
+                              sx={{
+                                bgcolor: '#0A0908',
+                                borderRadius: '12px',
+                                border: '1px solid #23211F',
+                                fontFamily: '"JetBrains Mono"',
+                                fontSize: '12px',
+                                color: '#FFFFFF',
+                                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                '&:hover': { border: '1.5px solid #A855F7' }
+                              }}
+                            >
+                              <MenuItem value="CRITICAL" sx={{ fontFamily: '"JetBrains Mono"', fontSize: '12px', color: '#EF4444' }}>CRITICAL</MenuItem>
+                              <MenuItem value="HIGH" sx={{ fontFamily: '"JetBrains Mono"', fontSize: '12px', color: '#F59E0B' }}>HIGH</MenuItem>
+                              <MenuItem value="MEDIUM" sx={{ fontFamily: '"JetBrains Mono"', fontSize: '12px', color: '#EBF1FD' }}>MEDIUM</MenuItem>
+                              <MenuItem value="LOW" sx={{ fontFamily: '"JetBrains Mono"', fontSize: '12px', color: '#9B9691' }}>LOW</MenuItem>
+                            </Select>
+                          </FormControl>
+
+                          <FormControl size="small" sx={{ flex: 1.2, width: '100%' }}>
+                            <Select
+                              value={newTaskStatus}
+                              onChange={(e) => setNewTaskStatus(e.target.value)}
+                              sx={{
+                                bgcolor: '#0A0908',
+                                borderRadius: '12px',
+                                border: '1px solid #23211F',
+                                fontFamily: '"Space Grotesk"',
+                                fontSize: '12px',
+                                color: '#FFFFFF',
+                                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                '&:hover': { border: '1.5px solid #A855F7' }
+                              }}
+                            >
+                              <MenuItem value="Backlog" sx={{ fontFamily: '"Space Grotesk"', fontSize: '12px' }}>Backlog</MenuItem>
+                              <MenuItem value="In Progress" sx={{ fontFamily: '"Space Grotesk"', fontSize: '12px' }}>In Progress</MenuItem>
+                              <MenuItem value="Completed" sx={{ fontFamily: '"Space Grotesk"', fontSize: '12px' }}>Completed</MenuItem>
+                            </Select>
+                          </FormControl>
+
+                          <Button
+                            onClick={handleCreateTask}
+                            variant="contained"
+                            disabled={!newTaskText.trim()}
+                            startIcon={<Plus size={14} />}
+                            sx={{
+                              bgcolor: '#A855F7',
+                              color: '#FFFFFF',
+                              borderRadius: '12px',
+                              fontFamily: '"Space Grotesk"',
+                              fontWeight: 700,
+                              fontSize: '11px',
+                              px: 3.5,
+                              py: 1.2,
+                              whiteSpace: 'nowrap',
+                              height: '40px',
+                              '&:hover': { bgcolor: '#8F3FD0' },
+                              '&.Mui-disabled': { bgcolor: '#161412', color: '#9B9691', border: '1px solid #23211F' }
+                            }}
+                          >
+                            Add Directive
+                          </Button>
+                        </Box>
+
+                        {user ? (
+                          <Typography sx={{ fontSize: '10px', color: '#10B981', fontFamily: '"JetBrains Mono"' }}>
+                            ● DEPLOYING SECURELY TO CLOUD FIRESTORE SUITE
+                          </Typography>
+                        ) : (
+                          <Typography sx={{ fontSize: '10px', color: '#F59E0B', fontFamily: '"JetBrains Mono"' }}>
+                            ▲ DEMO / DEPLOYING OFFLINE-ONLY. CONNECT FIREBASE AUTH FOR SECURE REAL-TIME CLOUD STORAGE.
+                          </Typography>
+                        )}
+                      </Paper>
+                    </Box>
+
                     {/* Task Kanban mockup */}
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
                       <Box>
-                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#161412', borderRadius: '20px', border: '1px solid #1C1A18', minHeight: '260px' }}>
+                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#161412', borderRadius: '20px', border: '1px solid #23211F', minHeight: '260px' }}>
                           <Typography sx={{ color: '#A855F7', fontFamily: '"Space Grotesk"', fontWeight: 700, fontSize: '14px', mb: 2 }}>
                             ● INTAKE BACKLOG
                           </Typography>
                           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                             {activeTasks.map(t => (
-                              <Box key={t.id} sx={{ p: 2, bgcolor: '#0A0908', borderRadius: '14px', border: '1px solid #1C1A18' }}>
-                                <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#FFFFFF', mb: 1 }}>{t.task}</Typography>
+                              <Box key={t.id} sx={{ p: 2, bgcolor: '#0A0908', borderRadius: '14px', border: '1px solid #23211F' }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                                  <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#FFFFFF', flex: 1, pr: 1 }}>{t.task}</Typography>
+                                  <IconButton 
+                                    onClick={() => handleDeleteTask(t.id)}
+                                    size="small"
+                                    sx={{ color: '#EF4444', p: 0.5, mt: -0.5, '&:hover': { bgcolor: 'rgba(239,68,68,0.1)' } }}
+                                  >
+                                    <Trash2 size={13} />
+                                  </IconButton>
+                                </Box>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <Chip label={t.priority} size="small" sx={{ fontSize: '9px', bgcolor: t.priority === 'CRITICAL' ? '#EF4444' : '#1C1A18', color: '#FFFFFF', height: '18px', fontWeight: 700 }} />
                                 </Box>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5, pt: 1, borderTop: '1px solid #1C1A18' }}>
-                                  <Typography sx={{ fontSize: '11px', color: '#9B9691', fontFamily: '"JetBrains Mono"' }}>{t.status}</Typography>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5, pt: 1, borderTop: '1px solid #23211F' }}>
+                                  <Button
+                                    size="small"
+                                    onClick={() => handleUpdateTaskStatus(t.id, t.status)}
+                                    sx={{
+                                      p: 0,
+                                      color: t.status === 'Completed' ? '#10B981' : '#9B9691',
+                                      fontSize: '11px',
+                                      fontFamily: '"JetBrains Mono"',
+                                      fontWeight: 700,
+                                      '&:hover': { color: '#EBF1FD', bgcolor: 'transparent' }
+                                    }}
+                                  >
+                                    [{t.status === 'Completed' ? '✓ DONE' : '☐ IN WORK'}]
+                                  </Button>
                                   <Button
                                     size="small"
                                     onClick={() => handlePortTaskToGitHub(t)}
@@ -645,13 +1129,13 @@ export default function App() {
                       </Box>
 
                       <Box>
-                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#161412', borderRadius: '20px', border: '1px solid #1C1A18', minHeight: '260px' }}>
+                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#161412', borderRadius: '20px', border: '1px solid #23211F', minHeight: '260px' }}>
                           <Typography sx={{ color: '#10B981', fontFamily: '"Space Grotesk"', fontWeight: 700, fontSize: '14px', mb: 2 }}>
                             ● DEEP WORK SESSION (SECURE)
                           </Typography>
-                          <Box sx={{ border: '2px dashed #1C1A18', borderRadius: '14px', p: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', py: 6 }}>
-                            <Activity size={24} style={{ color: '#34322F', marginBottom: '8px' }} />
-                            <Typography sx={{ color: '#9B9691', fontSize: '12px', textAlign: 'center' }}>
+                          <Box sx={{ border: '2px dashed #23211F', borderRadius: '14px', p: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', py: 6 }}>
+                            <Activity size={24} style={{ color: '#23211F', marginBottom: '8px' }} />
+                            <Typography sx={{ color: '#9B9691', fontSize: '12px', textAlign: 'center', fontFamily: '"Satoshi"' }}>
                               Drag blocks here to commit active mental bandwidth threads. Offline timers will start automatically.
                             </Typography>
                           </Box>

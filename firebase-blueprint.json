@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "User account configurations and integrations meta",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "userId"]
+    },
+    "note": {
+      "title": "Secure Markdown Note",
+      "description": "Sovereign user note stored in the cloud vault",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title"]
+    },
+    "task": {
+      "title": "Sovereign Flow Task",
+      "description": "A workflow task aligned with the user's flow grid",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "task": { "type": "string" },
+        "priority": { "type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"] },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "task", "priority", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "Information about registered users"
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": "note",
+      "description": "User draft and synced markdown documents"
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "task",
+      "description": "Sovereign items and checklist nodes owned by user in Kylrix Flow"
+    }
+  }
+}
